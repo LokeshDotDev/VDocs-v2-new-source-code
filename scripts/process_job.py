@@ -17,6 +17,7 @@ CONVERTER_MODULE = os.path.join(PYTHON_MANAGER, "modules", "converter-module")
 REDUCTOR_MODULE = os.path.join(PROJECT_ROOT, "reductor-module", "reductor-service-v2")
 HUMANIZER_MODULE = os.path.join(PYTHON_MANAGER, "modules", "humanizer")
 SPELL_CHECKER_MODULE = os.path.join(PYTHON_MANAGER, "modules", "spell-grammar-checker")
+FORMATTER_MODULE = os.path.join(PYTHON_MANAGER, "modules", "document-formatter")
 
 # Strategy: Import each module's dependencies in isolation
 try:
@@ -42,6 +43,11 @@ try:
     # === SPELL/GRAMMAR CHECKER ===
     sys.path.insert(0, SPELL_CHECKER_MODULE)
     import spell_grammar_checker
+    sys.path.pop(0)
+    
+    # === DOCUMENT FORMATTER ===
+    sys.path.insert(0, FORMATTER_MODULE)
+    import formatter
     sys.path.pop(0)
     
     # === REDUCTOR MODULE ===
@@ -184,11 +190,12 @@ def process_job(job_id):
                 # Validate humanized DOCX
                 if not is_valid_docx(humanized_path):
                     print(f"[ERROR] Humanizer produced a corrupted DOCX: {humanized_path}")
-                    continue
+                    shutil.copy(redacted_path, humanized_path)
             except Exception as e:
-                print(f"Humanization failed: {e}")
-                # Fallback to redacted if humanization fails
-            # Fix Spelling & Grammar (NEW STEP)
+                print(f"Humanizer failed: {e}")
+                shutil.copy(redacted_path, humanized_path)
+
+            # Fix Spelling & Grammar
             print("Fixing spelling and grammar...")
             final_path = os.path.join(temp_dir, "final_" + os.path.basename(docx_path))
             try:
@@ -204,16 +211,33 @@ def process_job(job_id):
                 # Fallback to humanized if spell check fails
                 shutil.copy(humanized_path, final_path)
             
-            output_files.append(final_path)
+            # Apply Standard Formatting (NEW STEP)
+            print("Applying standard formatting...")
+            formatted_path = os.path.join(temp_dir, "formatted_" + os.path.basename(docx_path))
+            try:
+                format_stats = formatter.format_docx_via_onlyoffice(final_path, formatted_path)
+                print(f"  Formatting status: {format_stats['status']}")
+                print(f"  Processing time: {format_stats['processing_time_ms']}ms")
+                # Validate formatted DOCX
+                if not is_valid_docx(formatted_path):
+                    print(f"[ERROR] Formatter produced a corrupted DOCX: {formatted_path}")
+                    # Fallback to final (spell-checked) version
+                    shutil.copy(final_path, formatted_path)
+            except Exception as e:
+                print(f"Formatting failed: {e}")
+                # Fallback to spell-checked version if formatting fails
+                shutil.copy(final_path, formatted_path)
+            
+            output_files.append(formatted_path)
         
         # Zip Results
         zip_path = os.path.join(temp_dir, "result.zip")
         print("Zipping results...")
         with zipfile.ZipFile(zip_path, 'w') as zipf:
             for file in output_files:
-                # Remove prefixes (final_, humanized_, redacted_) to get clean names
+                # Remove prefixes to get clean names
                 basename = os.path.basename(file)
-                for prefix in ["final_", "humanized_", "redacted_"]:
+                for prefix in ["formatted_", "final_", "humanized_", "redacted_"]:
                     if basename.startswith(prefix):
                         basename = basename[len(prefix):]
                         break
