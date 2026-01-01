@@ -10,36 +10,56 @@ from pathlib import Path
 
 # Add paths to sys.path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.append(PROJECT_ROOT)
 
 # Add module paths
 PYTHON_MANAGER = os.path.join(PROJECT_ROOT, "python-manager")
 CONVERTER_MODULE = os.path.join(PYTHON_MANAGER, "modules", "converter-module")
-REDUCTOR_MODULE = os.path.join(PROJECT_ROOT, "reductor-module", "doc-anonymizer-mvp")
+REDUCTOR_MODULE = os.path.join(PROJECT_ROOT, "reductor-module", "reductor-service-v2")
 HUMANIZER_MODULE = os.path.join(PYTHON_MANAGER, "modules", "humanizer")
 
-sys.path.append(CONVERTER_MODULE)
-sys.path.append(REDUCTOR_MODULE)
-sys.path.append(HUMANIZER_MODULE)
-
-# Imports
+# Strategy: Import each module's dependencies in isolation
 try:
-    # Converter imports
-    # CONVERTER_MODULE is in path, so we import directly from its subpackages
+    # === CONVERTER MODULE ===
+    sys.path.insert(0, CONVERTER_MODULE)
     from utils.minio_handler import minio_handler
     from services.pdf_converter import PDFConverter
+    sys.path.pop(0)
     
-    # Reductor imports
-    # REDUCTOR_MODULE is in path, so we import 'backend'
-    from backend.batch.processor import process_docx as reduct_docx
+    # Clear utils from cache to allow other utils packages
+    if 'utils' in sys.modules:
+        del sys.modules['utils']
     
-    # Humanizer imports
-    # HUMANIZER_MODULE is in path
+    # === HUMANIZER MODULE ===  
+    sys.path.insert(0, HUMANIZER_MODULE)
     import docx_humanize_lxml
-except ImportError as e:
+    sys.path.pop(0)
+    
+    # Clear utils again
+    if 'utils' in sys.modules:
+        del sys.modules['utils']
+    
+    # === REDUCTOR MODULE ===
+    sys.path.insert(0, REDUCTOR_MODULE)
+    
+    # Import logger module
+    import logger as reductor_logger_module
+    
+    # Now import reductor utils
+    import utils.docx_anonymizer as docx_anon_module
+    import utils.identity_detector as identity_det_module
+    
+    # Extract functions
+    anonymize_docx = docx_anon_module.anonymize_docx
+    unzip_docx = docx_anon_module.unzip_docx
+    load_xml = docx_anon_module.load_xml
+    detect_identity = identity_det_module.detect_identity
+    
+    sys.path.pop(0)
+    
+except Exception as e:
     print(f"Error importing modules: {e}")
-    # Fallback for paths if direct import fails (e.g. structure differences)
-    # We will handle this dynamically if needed
+    import traceback
+    traceback.print_exc()
     sys.exit(1)
 
 def process_job(job_id):
@@ -120,9 +140,27 @@ def process_job(job_id):
 
             # Reduct
             print("Redacting...")
+            
+            # Detect identity first
+            try:
+                temp_unzip = unzip_docx(docx_path)
+                document_xml = os.path.join(temp_unzip, "word/document.xml")
+                tree = load_xml(document_xml)
+                identity = detect_identity(tree)
+                shutil.rmtree(temp_unzip)
+                print(f"Detected identity: name={identity.get('name')}, roll_no={identity.get('roll_no')}")
+            except Exception as e:
+                print(f"Failed to detect identity: {e}")
+                identity = {"name": None, "roll_no": None}
+            
             redacted_path = os.path.join(temp_dir, "redacted_" + os.path.basename(docx_path))
             try:
-                reduct_docx(docx_path, redacted_path)
+                anonymize_docx(
+                    docx_path, 
+                    redacted_path,
+                    name=identity.get("name"),
+                    roll_no=identity.get("roll_no")
+                )
                 # Validate redacted DOCX
                 if not is_valid_docx(redacted_path):
                     print(f"[ERROR] Redactor produced a corrupted DOCX: {redacted_path}")
