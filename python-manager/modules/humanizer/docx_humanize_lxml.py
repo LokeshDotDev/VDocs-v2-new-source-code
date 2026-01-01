@@ -25,15 +25,15 @@ NSMAP = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
 HUMANIZER_URL = os.environ.get("HUMANIZER_URL", "http://localhost:8000/humanize")
 
 # Tuning knobs (env-driven) for aggressiveness and safety guards
-# Optimized for AI detection scores < 10%
-AGGRESSIVE = os.environ.get("HUMANIZER_AGGRESSIVE", "1") in ("1", "true", "True")
-HIGH_P_SYN = float(os.environ.get("HUMANIZER_P_SYN_HIGH", "0.85"))  # Increased from 0.70
-HIGH_P_TRANS = float(os.environ.get("HUMANIZER_P_TRANS_HIGH", "0.55"))  # Increased from 0.40
-MID_P_SYN = float(os.environ.get("HUMANIZER_P_SYN_LOW", "0.65"))  # Increased from 0.50
-MID_P_TRANS = float(os.environ.get("HUMANIZER_P_TRANS_LOW", "0.45"))  # Increased from 0.32
-MAX_LEN_DELTA = float(os.environ.get("HUMANIZER_MAX_LEN_DELTA", "0.20"))  # Increased from 0.12 (20% length tolerance)
-SIMILARITY_MAX = float(os.environ.get("HUMANIZER_SIMILARITY_MAX", "0.75"))  # Reduced from 0.90 (require more change)
-MAX_ATTEMPTS = int(os.environ.get("HUMANIZER_ATTEMPTS", "5"))  # Increased from 3
+# Balanced for readability (fluency/clarity) while reducing AI detection
+AGGRESSIVE = os.environ.get("HUMANIZER_AGGRESSIVE", "0") in ("1", "true", "True")
+HIGH_P_SYN = float(os.environ.get("HUMANIZER_P_SYN_HIGH", "0.50"))  # Reduced for better fluency
+HIGH_P_TRANS = float(os.environ.get("HUMANIZER_P_TRANS_HIGH", "0.30"))  # Reduced for better clarity
+MID_P_SYN = float(os.environ.get("HUMANIZER_P_SYN_LOW", "0.35"))  # More conservative
+MID_P_TRANS = float(os.environ.get("HUMANIZER_P_TRANS_LOW", "0.20"))  # More conservative
+MAX_LEN_DELTA = float(os.environ.get("HUMANIZER_MAX_LEN_DELTA", "0.15"))  # Tighter to preserve structure
+SIMILARITY_MAX = float(os.environ.get("HUMANIZER_SIMILARITY_MAX", "0.85"))  # Higher = less change = better readability
+MAX_ATTEMPTS = int(os.environ.get("HUMANIZER_ATTEMPTS", "3"))  # Fewer attempts = less over-processing
 
 
 def _post_json(url: str, payload: dict, timeout: int = 60) -> dict:

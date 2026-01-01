@@ -16,6 +16,7 @@ PYTHON_MANAGER = os.path.join(PROJECT_ROOT, "python-manager")
 CONVERTER_MODULE = os.path.join(PYTHON_MANAGER, "modules", "converter-module")
 REDUCTOR_MODULE = os.path.join(PROJECT_ROOT, "reductor-module", "reductor-service-v2")
 HUMANIZER_MODULE = os.path.join(PYTHON_MANAGER, "modules", "humanizer")
+SPELL_CHECKER_MODULE = os.path.join(PYTHON_MANAGER, "modules", "spell-grammar-checker")
 
 # Strategy: Import each module's dependencies in isolation
 try:
@@ -37,6 +38,11 @@ try:
     # Clear utils again
     if 'utils' in sys.modules:
         del sys.modules['utils']
+    
+    # === SPELL/GRAMMAR CHECKER ===
+    sys.path.insert(0, SPELL_CHECKER_MODULE)
+    import spell_grammar_checker
+    sys.path.pop(0)
     
     # === REDUCTOR MODULE ===
     sys.path.insert(0, REDUCTOR_MODULE)
@@ -182,26 +188,36 @@ def process_job(job_id):
             except Exception as e:
                 print(f"Humanization failed: {e}")
                 # Fallback to redacted if humanization fails
-                shutil.copy(redacted_path, humanized_path)
-                # Validate fallback
-                if not is_valid_docx(humanized_path):
-                    print(f"[ERROR] Fallback redacted DOCX is also corrupted: {humanized_path}")
-                    continue
-
-            output_files.append(humanized_path)
-        
-        if not output_files:
-            print("No files processed successfully.")
-            return False
+            # Fix Spelling & Grammar (NEW STEP)
+            print("Fixing spelling and grammar...")
+            final_path = os.path.join(temp_dir, "final_" + os.path.basename(docx_path))
+            try:
+                stats = spell_grammar_checker.process_docx(humanized_path, final_path)
+                print(f"  Fixed {stats['total_changes']} spelling/grammar errors")
+                # Validate fixed DOCX
+                if not is_valid_docx(final_path):
+                    print(f"[ERROR] Spell checker produced a corrupted DOCX: {final_path}")
+                    # Fallback to humanized version
+                    shutil.copy(humanized_path, final_path)
+            except Exception as e:
+                print(f"Spell/grammar check failed: {e}")
+                # Fallback to humanized if spell check fails
+                shutil.copy(humanized_path, final_path)
             
-        # Zip results
-        zip_filename = f"job_{job_id}_result.zip"
-        zip_path = os.path.join(temp_dir, zip_filename)
+            output_files.append(final_path)
+        
+        # Zip Results
+        zip_path = os.path.join(temp_dir, "result.zip")
         print("Zipping results...")
         with zipfile.ZipFile(zip_path, 'w') as zipf:
             for file in output_files:
-                arcname = os.path.basename(file).replace("humanized_", "")
-                zipf.write(file, arcname)
+                # Remove prefixes (final_, humanized_, redacted_) to get clean names
+                basename = os.path.basename(file)
+                for prefix in ["final_", "humanized_", "redacted_"]:
+                    if basename.startswith(prefix):
+                        basename = basename[len(prefix):]
+                        break
+                zipf.write(file, basename)
         
         # Upload Zip
         zip_key = f"jobs/{job_id}/result.zip"
