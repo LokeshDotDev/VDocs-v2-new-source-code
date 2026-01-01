@@ -1,0 +1,21 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Temp files
+tmp/
+*.docx
+*.pdf
+
+# OS
+.DS_Store
+
+.venv/
+**/.venv/
+venv/
+**/venv/
+node_modules/
+__pycache__/
+.env
+.DS_Store
