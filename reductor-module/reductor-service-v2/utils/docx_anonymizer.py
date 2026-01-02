@@ -69,7 +69,7 @@ def zip_docx(temp_dir: str, output_path: str):
 
 def _remove_value_from_text_nodes(docx_path: str, value: str) -> int:
     """
-    Remove value by clearing exact text node matches.
+    Remove value by clearing exact text node matches (case-insensitive).
     
     Args:
         docx_path: Path to DOCX file
@@ -87,18 +87,19 @@ def _remove_value_from_text_nodes(docx_path: str, value: str) -> int:
         tree = load_xml(document_xml)
         root = tree.getroot()
         
-        val_clean = value.strip()
+        val_clean = value.strip().lower()  # Normalize to lowercase for comparison
         removed_count = 0
         
-        # Find and clear exact matches only
+        # Find and clear matches (case-insensitive, also check for partial matches)
         for text_node in root.xpath("//w:t", namespaces=WORD_NAMESPACE):
             if not text_node.text:
                 continue
             
             node_text = text_node.text.strip()
+            node_lower = node_text.lower()
             
-            # Clear if EXACT match (case-insensitive for names)
-            if node_text.lower() == val_clean.lower():
+            # Clear if exact match OR if value is contained in node
+            if node_lower == val_clean or val_clean in node_lower:
                 # Use NBSP to preserve layout and bullet rendering in Word
                 # Regular spaces can sometimes affect glyph fallback; NBSP is safer
                 text_node.text = "\u00A0"

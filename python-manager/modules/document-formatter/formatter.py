@@ -52,7 +52,19 @@ def _apply_standard_formatting(doc: Document) -> Tuple[int, int, int, int]:
     # Format paragraphs and strip empty/page-break-only paragraphs
     for paragraph in list(doc.paragraphs):
         page_breaks_removed += _remove_page_break_runs(paragraph)
+        
+        # Force justify alignment at both high level and XML level
         paragraph.alignment = STANDARD_ALIGNMENT
+        
+        # Also set at XML level to ensure it's saved properly
+        pPr = paragraph._element.get_or_add_pPr()
+        jc = pPr.find(".//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}jc")
+        if jc is None:
+            from docx.oxml import OxmlElement
+            jc = OxmlElement("w:jc")
+            pPr.append(jc)
+        jc.set("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val", "both")
+        
         fmt = paragraph.paragraph_format
         fmt.line_spacing = STANDARD_LINE_SPACING
         fmt.space_before = Pt(0)
@@ -76,7 +88,19 @@ def _apply_standard_formatting(doc: Document) -> Tuple[int, int, int, int]:
             for cell in row.cells:
                 for paragraph in cell.paragraphs:
                     _remove_page_break_runs(paragraph)
+                    
+                    # Force justify alignment at both high level and XML level
                     paragraph.alignment = STANDARD_ALIGNMENT
+                    
+                    # Also set at XML level to ensure it's saved properly
+                    pPr = paragraph._element.get_or_add_pPr()
+                    jc = pPr.find(".//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}jc")
+                    if jc is None:
+                        from docx.oxml import OxmlElement
+                        jc = OxmlElement("w:jc")
+                        pPr.append(jc)
+                    jc.set("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val", "both")
+                    
                     fmt = paragraph.paragraph_format
                     fmt.line_spacing = STANDARD_LINE_SPACING
                     fmt.space_before = Pt(0)
