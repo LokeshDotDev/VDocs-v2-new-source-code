@@ -11,6 +11,7 @@ export async function POST(request: NextRequest) {
 		const formData = await request.formData();
 		const file = formData.get("file") as File;
 		const documentKey = formData.get("documentKey") as string;
+		const extOverride = (formData.get("ext") as string | null)?.toLowerCase();
 
 		if (!file || !documentKey) {
 			return NextResponse.json(
@@ -27,14 +28,17 @@ export async function POST(request: NextRequest) {
 		// Save file to disk
 		const bytes = await file.arrayBuffer();
 		const buffer = Buffer.from(bytes);
-		const filePath = join(TMP_DIR, `${documentKey}.docx`);
+		const originalName = file.name || "uploaded";
+		const extFromName = originalName.includes(".") ? originalName.split(".").pop() || "docx" : "docx";
+		const ext = extOverride || extFromName;
+		const filePath = join(TMP_DIR, `${documentKey}.${ext}`);
 		await writeFile(filePath, buffer);
 
 		// Return URL that OnlyOffice can access
 		// OnlyOffice runs in Docker, so use host.docker.internal instead of localhost
-		const url = `http://host.docker.internal:3001/api/editor/serve-local?key=${documentKey}`;
+		const url = `http://host.docker.internal:3001/api/editor/serve-local?key=${documentKey}&ext=${ext}`;
 
-		return NextResponse.json({ url, key: documentKey });
+		return NextResponse.json({ url, key: documentKey, ext, originalName });
 	} catch (error) {
 		console.error("Upload error:", error);
 		return NextResponse.json(

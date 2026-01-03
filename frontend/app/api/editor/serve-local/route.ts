@@ -9,6 +9,7 @@ export async function GET(request: NextRequest) {
 	try {
 		const searchParams = request.nextUrl.searchParams;
 		const key = searchParams.get("key");
+		const ext = (searchParams.get("ext") || "docx").toLowerCase();
 
 		if (!key) {
 			return NextResponse.json(
@@ -17,7 +18,7 @@ export async function GET(request: NextRequest) {
 			);
 		}
 
-		const filePath = join(TMP_DIR, `${key}.docx`);
+		const filePath = join(TMP_DIR, `${key}.${ext}`);
 
 		if (!existsSync(filePath)) {
 			return NextResponse.json({ error: "File not found" }, { status: 404 });
@@ -25,11 +26,26 @@ export async function GET(request: NextRequest) {
 
 		const fileBuffer = await readFile(filePath);
 
+		const contentTypes: Record<string, string> = {
+			docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+			doc: "application/msword",
+			odt: "application/vnd.oasis.opendocument.text",
+			rtf: "application/rtf",
+			txt: "text/plain",
+			pdf: "application/pdf",
+			xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+			xls: "application/vnd.ms-excel",
+			ods: "application/vnd.oasis.opendocument.spreadsheet",
+			csv: "text/csv",
+			pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+			ppt: "application/vnd.ms-powerpoint",
+			odp: "application/vnd.oasis.opendocument.presentation",
+		};
+
 		return new NextResponse(fileBuffer, {
 			headers: {
-				"Content-Type":
-					"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-				"Content-Disposition": `inline; filename="${key}.docx"`,
+				"Content-Type": contentTypes[ext] || "application/octet-stream",
+				"Content-Disposition": `inline; filename="${key}.${ext}"`,
 				"Access-Control-Allow-Origin": "*",
 			},
 		});

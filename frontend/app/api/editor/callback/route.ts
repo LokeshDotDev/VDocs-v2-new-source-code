@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { writeFile } from "fs/promises";
+import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
+import { existsSync } from "fs";
 
 const TMP_DIR = join(process.cwd(), "tmp", "editor-files");
 
@@ -8,6 +9,8 @@ export async function POST(request: NextRequest) {
 	try {
 		const searchParams = request.nextUrl.searchParams;
 		const key = searchParams.get("key");
+		const ext = (searchParams.get("ext") || "docx").toLowerCase();
+		const userId = searchParams.get("userId") || "anonymous";
 
 		if (!key) {
 			return NextResponse.json(
@@ -39,8 +42,13 @@ export async function POST(request: NextRequest) {
 				const response = await fetch(downloadUrl);
 				const buffer = await response.arrayBuffer();
 
-				// Save the edited file
-				const filePath = join(TMP_DIR, `${key}.docx`);
+				// Ensure tmp directory exists
+				if (!existsSync(TMP_DIR)) {
+					await mkdir(TMP_DIR, { recursive: true });
+				}
+
+				// Save the edited file locally
+				const filePath = join(TMP_DIR, `${key}.${ext}`);
 				await writeFile(filePath, Buffer.from(buffer));
 
 				console.log(`Saved edited document: ${filePath}`);

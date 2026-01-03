@@ -2,7 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Upload, Download, FileText } from "lucide-react";
+import { Upload, FileText, Download } from "lucide-react";
+import { useSession } from "next-auth/react";
 
 declare global {
 	interface Window {
@@ -15,53 +16,49 @@ export default function EditorPage() {
 	const [editorReady, setEditorReady] = useState(false);
 	const [documentKey, setDocumentKey] = useState<string>("");
 	const [fileName, setFileName] = useState<string>("");
+	const [fileType, setFileType] = useState<string>("docx");
+	const [documentType, setDocumentType] = useState<"word" | "cell" | "slide">("word");
+	const [fileExt, setFileExt] = useState<string>("docx");
+	const [showNextPrompt, setShowNextPrompt] = useState(false);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const editorRef = useRef<any>(null);
 	const containerRef = useRef<HTMLDivElement>(null);
+	const { data: session } = useSession();
 
-	// Restore state from sessionStorage on mount
-	useEffect(() => {
-		const savedKey = sessionStorage.getItem("editor_doc_key");
-		const savedName = sessionStorage.getItem("editor_doc_name");
-
-		if (savedKey && savedName) {
-			setDocumentKey(savedKey);
-			setFileName(savedName);
-			// Create a placeholder file object
-			const placeholder = new File([], savedName, { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
-			setUploadedFile(placeholder);
-			
-			// Reinitialize editor with saved document
-			const docUrl = `http://host.docker.internal:3001/api/editor/serve-local?key=${savedKey}`;
-			initializeEditor(docUrl, savedName, savedKey);
-		}
-	}, []);
+	const resolveDocType = (ext: string): { documentType: "word" | "cell" | "slide"; fileType: string } => {
+		const lower = ext.toLowerCase();
+		const wordExt = ["doc", "docx", "odt", "rtf", "txt", "pdf"];
+		const cellExt = ["xls", "xlsx", "ods", "csv"];
+		const slideExt = ["ppt", "pptx", "odp"];
+		if (wordExt.includes(lower)) return { documentType: "word", fileType: lower };
+		if (cellExt.includes(lower)) return { documentType: "cell", fileType: lower };
+		if (slideExt.includes(lower)) return { documentType: "slide", fileType: lower };
+		return { documentType: "word", fileType: lower };
+	};
 
 	const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 		const file = e.target.files?.[0];
 		if (!file) return;
 
-		if (!file.name.endsWith(".docx")) {
-			alert("Please upload a DOCX file");
-			return;
-		}
+		const ext = file.name.split(".").pop()?.toLowerCase() || "docx";
+		const { documentType: docType, fileType: ooFileType } = resolveDocType(ext);
 
 		setUploadedFile(file);
 		setEditorReady(false);
 		setFileName(file.name);
+		setDocumentType(docType);
+		setFileType(ooFileType);
+		setFileExt(ext);
 
 		// Generate unique document key
 		const key = `local-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 		setDocumentKey(key);
 
-		// Save to sessionStorage for persistence
-		sessionStorage.setItem("editor_doc_key", key);
-		sessionStorage.setItem("editor_doc_name", file.name);
-
 		// Upload file to temporary endpoint for editing
 		const formData = new FormData();
 		formData.append("file", file);
 		formData.append("documentKey", key);
+		formData.append("ext", ext);
 
 		try {
 			const response = await fetch("/api/editor/upload-local", {
@@ -76,7 +73,7 @@ export default function EditorPage() {
 			const { url } = await response.json();
 
 			// Initialize OnlyOffice editor
-			await initializeEditor(url, file.name, key);
+			await initializeEditor(url, file.name, key, docType, ooFileType, ext);
 		} catch (error) {
 			console.error("Upload failed:", error);
 			alert("Failed to upload file. Please try again.");
@@ -86,7 +83,10 @@ export default function EditorPage() {
 	const initializeEditor = async (
 		docUrl: string,
 		fileName: string,
-		key: string
+		key: string,
+		docType: "word" | "cell" | "slide",
+		fileTypeForOO: string,
+		fileExtForCallback: string
 	) => {
 		// Load OnlyOffice API
 		if (!window.DocsAPI) {
@@ -114,10 +114,16 @@ export default function EditorPage() {
 		}
 
 		// Configure editor
+		const callbackParams = new URLSearchParams({
+			key,
+			ext: fileExtForCallback,
+			userId: session?.user?.id || "anonymous",
+		});
+
 		const config = {
-			documentType: "word",
+			documentType: docType,
 			document: {
-				fileType: "docx",
+				fileType: fileTypeForOO,
 				key: key,
 				title: fileName,
 				url: docUrl,
@@ -131,10 +137,10 @@ export default function EditorPage() {
 			editorConfig: {
 				mode: "edit",
 				lang: "en",
-				callbackUrl: `http://host.docker.internal:3001/api/editor/callback?key=${key}`,
+				callbackUrl: `http://host.docker.internal:3001/api/editor/callback?${callbackParams.toString()}`,
 				customization: {
-					autosave: true,
-					forcesave: true,
+					autosave: false,
+					forcesave: false,
 					compactHeader: false,
 					toolbarNoTabs: false,
 				},
@@ -162,12 +168,17 @@ export default function EditorPage() {
 		);
 	};
 
-	const handleDownload = async () => {
+// Download is available via OnlyOffice toolbar; keeping handler removed from UI to declutter.
+
+	const handleDownloadWithPrompt = async () => {
 		if (!documentKey) return;
+		const userId = session?.user?.id || "anonymous";
 
 		try {
 			const response = await fetch(
-				`/api/editor/download-local?key=${documentKey}`
+				`/api/editor/download-local?key=${documentKey}&ext=${fileExt}&name=${encodeURIComponent(
+					fileName || "edited-file"
+				)}&userId=${encodeURIComponent(userId)}`
 			);
 			if (!response.ok) {
 				throw new Error("Failed to download file");
@@ -177,11 +188,13 @@ export default function EditorPage() {
 			const url = window.URL.createObjectURL(blob);
 			const a = document.createElement("a");
 			a.href = url;
-			a.download = fileName || "edited-document.docx";
+			a.download = fileName || `edited-document.${fileExt}`;
 			document.body.appendChild(a);
 			a.click();
 			window.URL.revokeObjectURL(url);
 			document.body.removeChild(a);
+
+			setShowNextPrompt(true);
 		} catch (error) {
 			console.error("Download failed:", error);
 			alert("Failed to download file. Please try again.");
@@ -190,42 +203,13 @@ export default function EditorPage() {
 
 	return (
 		<div className='fixed inset-0 bg-gradient-to-b from-[#050910] via-[#0a1020] to-[#0b1224] text-slate-100 flex flex-col'>
-			{/* Header */}
-			<div className='flex items-center justify-between px-6 py-4 bg-black/20 border-b border-white/10'>
-				<div className='flex items-center gap-4'>
-					<FileText className='w-6 h-6 text-indigo-400' />
-					<div>
-						<h1 className='text-xl font-bold'>Document Editor</h1>
-						{fileName && (
-							<p className='text-sm text-slate-400'>{fileName}</p>
-						)}
-					</div>
-				</div>
-
-				<div className='flex items-center gap-3'>
-					<input
-						ref={fileInputRef}
-						type='file'
-						accept='.docx'
-						onChange={handleFileUpload}
-						className='hidden'
-					/>
-					<Button
-						onClick={() => fileInputRef.current?.click()}
-						variant='outline'
-						className='gap-2'>
-						<Upload className='w-4 h-4' />
-						{uploadedFile ? "Upload New" : "Upload DOCX"}
-					</Button>
-
-					{uploadedFile && editorReady && (
-						<Button onClick={handleDownload} className='gap-2'>
-							<Download className='w-4 h-4' />
-							Download
-						</Button>
-					)}
-				</div>
-			</div>
+			<input
+				ref={fileInputRef}
+				type='file'
+				accept='.doc,.docx,.odt,.rtf,.txt,.pdf,.xls,.xlsx,.ods,.csv,.ppt,.pptx,.odp'
+				onChange={handleFileUpload}
+				className='hidden'
+			/>
 
 			{/* Editor Area */}
 			<div className='flex-1 overflow-hidden'>
@@ -245,20 +229,60 @@ export default function EditorPage() {
 								Upload a Document to Get Started
 							</h2>
 							<p className='text-slate-400'>
-								Upload a DOCX file to edit it online like Microsoft Word. Your
-								file stays local and secure.
+								Upload a supported document (Word, PDF, Sheets, Slides) to edit it
+								with OnlyOffice. Your file stays local and secure.
 							</p>
 							<Button
 								onClick={() => fileInputRef.current?.click()}
 								size='lg'
 								className='gap-2'>
 								<Upload className='w-5 h-5' />
-								Upload DOCX File
+								Upload a File
 							</Button>
 						</div>
 					</div>
 				)}
 			</div>
+
+			{/* Minimal download control and post-download prompt */}
+			{uploadedFile && editorReady && (
+				<div className='fixed bottom-4 right-4 z-50 flex items-center gap-3'>
+					<Button
+						onClick={handleDownloadWithPrompt}
+						size='sm'
+						className='bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-900/30 border border-white/10'>
+						<Download className='w-4 h-4 mr-2' />
+						Download
+					</Button>
+				</div>
+			)}
+
+			{showNextPrompt && (
+				<div className='fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm'>
+					<div className='bg-[#0b0f1a] border border-white/10 rounded-xl p-6 w-full max-w-sm space-y-4 shadow-2xl'>
+						<h3 className='text-lg font-semibold text-slate-100'>Load another file?</h3>
+						<p className='text-sm text-slate-400'>You can keep this document open or pick a new one to edit.</p>
+						<div className='flex justify-end gap-2'>
+							<Button
+								variant='outline'
+								onClick={() => setShowNextPrompt(false)}
+								className='border-white/15 text-slate-200 hover:bg-white/10'
+							>
+								Keep current
+							</Button>
+							<Button
+								onClick={() => {
+									setShowNextPrompt(false);
+									fileInputRef.current?.click();
+								}}
+								className='bg-indigo-600 hover:bg-indigo-500 text-white'
+							>
+								Load another
+							</Button>
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }

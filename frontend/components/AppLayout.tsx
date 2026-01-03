@@ -11,7 +11,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 	const pathname = usePathname();
 	const { data: session } = useSession();
 	const [showUserMenu, setShowUserMenu] = useState(false);
+	const [navVisible, setNavVisible] = useState(true);
 	const menuRef = useRef<HTMLDivElement>(null);
+	const hideTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+	const isEditorPage = pathname?.startsWith("/editor");
+
+	const clearHideTimer = () => {
+		if (hideTimerRef.current) {
+			clearTimeout(hideTimerRef.current);
+			hideTimerRef.current = null;
+		}
+	};
+
+	const scheduleHide = (delayMs: number) => {
+		if (!isEditorPage) return;
+		clearHideTimer();
+		hideTimerRef.current = setTimeout(() => setNavVisible(false), delayMs);
+	};
 
 	// Close menu when clicking outside
 	useEffect(() => {
@@ -28,7 +45,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 	}, [showUserMenu]);
 
 	// Hide navbar/footer on landing page and auth pages
-	const hideLayout =
+	const hideChrome =
 		pathname === "/" ||
 		pathname === "/login" ||
 		pathname === "/signup" ||
@@ -36,12 +53,50 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 		pathname === "/auth/signup" ||
 		pathname === "/auth/login";
 
+	// Show footer only on landing page
+	const showFooter = pathname === "/";
+
+	// Auto-hide navbar on editor for distraction-free editing
+	useEffect(() => {
+		if (!isEditorPage || hideChrome) {
+			setNavVisible(true);
+			clearHideTimer();
+			return;
+		}
+
+		setNavVisible(true);
+		scheduleHide(2500);
+
+		return () => clearHideTimer();
+	}, [isEditorPage, hideChrome, pathname]);
+
 	const isAdmin = session?.user?.role === "admin";
 
 	return (
 		<div className='min-h-screen bg-[#05070d] text-slate-100'>
-			{!hideLayout && (
-				<header className='fixed top-0 w-full border-b border-white/10 backdrop-blur-lg z-50 bg-[#0b1020]/85'>
+			{/* Reveal zone to bring navbar back on hover (editor only) */}
+			{isEditorPage && !hideChrome && (
+				<div
+					className='fixed top-0 left-0 w-full h-8 z-40'
+					onMouseEnter={() => {
+						setNavVisible(true);
+						clearHideTimer();
+					}}
+					onMouseLeave={() => scheduleHide(2000)}
+				/>
+			)}
+
+			{!hideChrome && (
+				<header
+					onMouseEnter={() => {
+						setNavVisible(true);
+						clearHideTimer();
+					}}
+					onMouseLeave={() => scheduleHide(2000)}
+					className={`fixed top-0 w-full border-b border-white/10 backdrop-blur-lg z-50 bg-[#0b1020]/85 transition-transform duration-300 ${
+						navVisible ? "translate-y-0" : "-translate-y-full"
+					}`}
+				>
 					<div className='container mx-auto px-6 h-16 flex items-center justify-between'>
 						{/* Logo */}
 						<Link href='/one-click' className='flex items-center gap-2'>
@@ -148,10 +203,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 			)}
 
 			{/* Main Content */}
-			<main className={hideLayout ? "" : "pt-16"}>{children}</main>
+			<main
+				className={hideChrome ? "" : ""}
+				style={{ paddingTop: hideChrome ? 0 : navVisible ? "4rem" : 0 }}
+			>
+				{children}
+			</main>
 
-			{/* Footer */}
-			{!hideLayout && (
+			{/* Footer (landing page only) */}
+			{showFooter && (
 				<footer className='border-t border-white/10 bg-[#0a1020]/90 backdrop-blur-lg'>
 					<div className='container mx-auto px-6 py-12'>
 						<div className='grid md:grid-cols-4 gap-8'>
