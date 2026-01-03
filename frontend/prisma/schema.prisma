@@ -1,0 +1,139 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  password      String
+  emailVerified DateTime?
+  image         String?
+  role          String    @default("user") // "user" or "admin"
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  jobs          Job[]
+  sessions      Session[]
+  accounts      Account[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Job {
+  id          String   @id @default(cuid())
+  userId      String
+  fileName    String
+  fileSize    Int
+  fileType    String
+  status      String   @default("pending") // "pending", "processing", "completed", "failed"
+  stage       String?  // "convert", "anonymize", "humanize", "spell-grammar", "format"
+  progress    Int      @default(0)
+  
+  // Processing times
+  startedAt   DateTime?
+  completedAt DateTime?
+  duration    Int?     // in seconds
+  
+  // Results
+  resultUrl   String?
+  errorMsg    String?
+  
+  // Metadata
+  metadata    Json?    // Additional processing metadata
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("jobs")
+}
+
+model Analytics {
+  id               String   @id @default(cuid())
+  
+  // Metrics
+  totalJobs        Int      @default(0)
+  completedJobs    Int      @default(0)
+  failedJobs       Int      @default(0)
+  totalUsers       Int      @default(0)
+  activeUsers      Int      @default(0)
+  
+  // Processing stats
+  avgProcessingTime Float?  // in seconds
+  totalProcessingTime Float?
+  
+  // File stats
+  totalFilesProcessed Int   @default(0)
+  totalFileSize       BigInt @default(0)
+  
+  // Daily aggregation
+  date             DateTime @unique
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([date])
+  @@map("analytics")
+}
+
+model SystemConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("system_config")
+}

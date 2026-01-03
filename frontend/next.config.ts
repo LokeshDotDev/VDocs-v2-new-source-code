@@ -14,6 +14,11 @@ const nextConfig: NextConfig = {
 	reactStrictMode: false,
 	async rewrites() {
 		return [
+			// Keep NextAuth local to the Next.js app (do NOT proxy to backend)
+			{
+				source: "/api/auth/:path*",
+				destination: "/api/auth/:path*",
+			},
 			{
 				source: "/api/upload/:path*",
 				destination: "/api/upload/:path*",

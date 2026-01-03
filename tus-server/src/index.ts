@@ -1,6 +1,7 @@
 import express from "express";
 import fs from "fs";
 import path from "path";
+import cors from "cors";
 import { 
 	createTusServer, 
 	getFailedUploads, 
@@ -13,6 +14,13 @@ import { checkMinIOHealth, ensureBucket } from "./minio-client.js";
 
 const app = express();
 const tusServer = createTusServer();
+
+// Enable CORS for all routes
+app.use(cors({
+	origin: true,
+	credentials: true,
+	exposedHeaders: ['Tus-Resumable', 'Upload-Offset', 'Location', 'Upload-Complete']
+}));
 
 // Ensure storage directory exists
 fs.mkdirSync(config.storageDir, { recursive: true });

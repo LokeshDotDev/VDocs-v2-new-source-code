@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>One-Click Upload Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .container {
+            border: 2px dashed #ccc;
+            padding: 30px;
+            text-align: center;
+            border-radius: 10px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        #log {
+            margin-top: 20px;
+            text-align: left;
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .error { color: red; }
+        .success { color: green; }
+        .info { color: blue; }
+    </style>
+</head>
+<body>
+    <h1>🧪 One-Click Upload Test</h1>
+    
+    <div class="container">
+        <input type="file" id="fileInput" accept=".pdf,.docx" />
+        <br><br>
+        <button id="uploadBtn" onclick="testUpload()">Start Upload & Processing</button>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+    
+    <div id="log"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/tus-js-client@latest/dist/tus.min.js"></script>
+    <script>
+        const BASE_URL = 'http://localhost:3001';
+        let currentJobId = null;
+        let pollInterval = null;
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type;
+            logDiv.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        async function testUpload() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                log('❌ Please select a file first', 'error');
+                return;
+            }
+
+            document.getElementById('uploadBtn').disabled = true;
+            clearLog();
+            
+            try {
+                log('🚀 Starting upload process...', 'info');
+                log(`📄 File: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`, 'info');
+                
+                // Step 1: Initialize upload
+                log('\n1️⃣ Initializing upload...', 'info');
+                const initResponse = await fetch(`${BASE_URL}/api/one-click/upload`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        fileName: file.name,
+                        fileType: file.type || 'application/octet-stream'
+                    })
+                });
+
+                if (!initResponse.ok) {
+                    const error = await initResponse.json();
+                    throw new Error(`Init failed: ${error.error}`);
+                }
+
+                const { jobId, uploadUrl, metadata } = await initResponse.json();
+                currentJobId = jobId;
+                
+                log(`✅ Upload initialized`, 'success');
+                log(`   Job ID: ${jobId}`, 'info');
+                log(`   Upload URL: ${uploadUrl}`, 'info');
+                log(`   Metadata: ${JSON.stringify(metadata)}`, 'info');
+
+                // Step 2: Upload via TUS
+                log('\n2️⃣ Uploading file via TUS...', 'info');
+                
+                await new Promise((resolve, reject) => {
+                    const upload = new tus.Upload(file, {
+                        endpoint: uploadUrl,
+                        metadata: metadata,
+                        retryDelays: [0, 1000, 3000, 5000],
+                        chunkSize: 5 * 1024 * 1024, // 5MB chunks
+                        onError: (error) => {
+                            log(`❌ TUS upload error: ${error.message}`, 'error');
+                            reject(error);
+                        },
+                        onProgress: (bytesUploaded, bytesTotal) => {
+                            const percentage = ((bytesUploaded / bytesTotal) * 100).toFixed(2);
+                            log(`📊 Upload progress: ${percentage}% (${bytesUploaded}/${bytesTotal} bytes)`, 'info');
+                        },
+                        onSuccess: () => {
+                            log(`✅ TUS upload complete!`, 'success');
+                            resolve();
+                        }
+                    });
+
+                    upload.start();
+                });
+
+                // Wait a moment
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                // Step 3: Start processing
+                log('\n3️⃣ Starting processing pipeline...', 'info');
+                const processResponse = await fetch(`${BASE_URL}/api/one-click/process`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ jobId })
+                });
+
+                if (!processResponse.ok) {
+                    const error = await processResponse.json();
+                    throw new Error(`Process failed: ${error.error}`);
+                }
+
+                log(`✅ Processing started`, 'success');
+
+                // Step 4: Monitor processing
+                log('\n4️⃣ Monitoring processing...', 'info');
+                startPolling(jobId);
+
+            } catch (error) {
+                log(`❌ Error: ${error.message}`, 'error');
+                document.getElementById('uploadBtn').disabled = false;
+            }
+        }
+
+        function startPolling(jobId) {
+            if (pollInterval) clearInterval(pollInterval);
+            
+            pollInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`${BASE_URL}/api/one-click/status?jobId=${jobId}`);
+                    if (!response.ok) {
+                        log(`❌ Status check failed: ${response.statusText}`, 'error');
+                        return;
+                    }
+
+                    const status = await response.json();
+                    log(`📈 [${status.progress}%] ${status.stage}: ${status.message}`, 'info');
+
+                    if (status.stage === 'complete') {
+                        clearInterval(pollInterval);
+                        log(`\n✅ Processing complete!`, 'success');
+                        log(`📥 Download: ${BASE_URL}/api/one-click/download?jobId=${jobId}`, 'success');
+                        
+                        // Auto-download
+                        window.location.href = `${BASE_URL}/api/one-click/download?jobId=${jobId}`;
+                        document.getElementById('uploadBtn').disabled = false;
+                    }
+
+                    if (status.error) {
+                        clearInterval(pollInterval);
+                        log(`❌ Processing error: ${status.error}`, 'error');
+                        document.getElementById('uploadBtn').disabled = false;
+                    }
+
+                } catch (error) {
+                    log(`❌ Polling error: ${error.message}`, 'error');
+                }
+            }, 2000);
+        }
+
+        log('✅ Test page loaded. Select a file and click "Start Upload & Processing"', 'success');
+    </script>
+</body>
+</html>

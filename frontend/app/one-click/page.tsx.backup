@@ -1,0 +1,622 @@
+"use client";
+
+import { useState, useCallback, useRef, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import {
+	Upload,
+	FileText,
+	Shield,
+	Sparkles,
+	CheckCircle2,
+	Download,
+	RefreshCw,
+	AlertCircle,
+	ChevronRight,
+	Loader2,
+} from "lucide-react";
+import { useDropzone } from "react-dropzone";
+import * as tus from "tus-js-client";
+
+type ProcessingStage =
+	| "upload"
+	| "convert"
+	| "anonymize"
+	| "humanize"
+	| "spell-grammar"
+	| "format"
+	| "complete";
+
+interface ProcessingStatus {
+	stage: ProcessingStage;
+	progress: number;
+	message: string;
+	error?: string;
+}
+
+const STAGES = [
+	{
+		id: "convert" as ProcessingStage,
+		icon: RefreshCw,
+		title: "Converting",
+		description: "PDF to DOCX conversion",
+		color: "blue",
+	},
+	{
+		id: "anonymize" as ProcessingStage,
+		icon: Shield,
+		title: "Anonymizing",
+		description: "Removing personal information",
+		color: "purple",
+	},
+	{
+		id: "humanize" as ProcessingStage,
+		icon: Sparkles,
+		title: "Humanizing",
+		description: "Making text natural",
+		color: "pink",
+	},
+	{
+		id: "spell-grammar" as ProcessingStage,
+		icon: CheckCircle2,
+		title: "Checking",
+		description: "Spell & grammar check",
+		color: "green",
+	},
+	{
+		id: "format" as ProcessingStage,
+		icon: FileText,
+		title: "Formatting",
+		description: "Professional formatting",
+		color: "orange",
+	},
+];
+
+export default function OneClickPage() {
+	const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+	const [folderStructure, setFolderStructure] = useState<Map<string, File[]>>(new Map());
+	const [processing, setProcessing] = useState(false);
+	const [status, setStatus] = useState<ProcessingStatus>({
+		stage: "upload",
+		progress: 0,
+		message: "Ready to process",
+	});
+	const [jobId, setJobId] = useState<string | null>(null);
+	const pollRef = useRef<NodeJS.Timeout | null>(null);
+	const fileInputRef = useRef<HTMLInputElement>(null);
+
+	useEffect(() => {
+		return () => {
+			if (pollRef.current) {
+				clearInterval(pollRef.current);
+			}
+		};
+	}, []);
+
+	const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const files = Array.from(e.target.files || []);
+		if (files.length === 0) return;
+
+		// Filter PDF files only and build folder structure
+		const pdfFiles = files.filter(f => f.name.toLowerCase().endsWith('.pdf'));
+		const structure = new Map<string, File[]>();
+
+		pdfFiles.forEach(file => {
+			// @ts-ignore - webkitRelativePath exists
+			const relativePath = file.webkitRelativePath || file.name;
+			const pathParts = relativePath.split('/');
+			const folderPath = pathParts.slice(0, -1).join('/') || 'root';
+			
+			if (!structure.has(folderPath)) {
+				structure.set(folderPath, []);
+			}
+			structure.get(folderPath)!.push(file);
+		});
+
+		setUploadedFiles(pdfFiles);
+		setFolderStructure(structure);
+		setStatus({
+			stage: "upload",
+			progress: 0,
+			message: `${pdfFiles.length} PDF files ready to process`,
+		});
+	};
+
+	const onDrop = useCallback((acceptedFiles: File[]) => {
+		const pdfFiles = acceptedFiles.filter(f => f.name.toLowerCase().endsWith('.pdf'));
+		if (pdfFiles.length > 0) {
+			setUploadedFiles(pdfFiles);
+			const structure = new Map<string, File[]>();
+			structure.set('root', pdfFiles);
+			setFolderStructure(structure);
+			setStatus({
+				stage: "upload",
+				progress: 0,
+				message: `${pdfFiles.length} file(s) ready to process`,
+			});
+		}
+	}, []);
+
+	const { getRootProps, getInputProps, isDragActive } = useDropzone({
+		onDrop,
+		accept: {
+			"application/pdf": [".pdf"],
+		},
+		multiple: true,
+		noClick: true, // Disable click to allow custom folder button
+	});
+
+	const clearPolling = () => {
+		if (pollRef.current) {
+			clearInterval(pollRef.current);
+			pollRef.current = null;
+		}
+	};
+
+	const startPolling = (activeJobId: string) => {
+		clearPolling();
+		pollRef.current = setInterval(async () => {
+			try {
+				const response = await fetch(`/api/one-click/status?jobId=${activeJobId}`);
+				if (!response.ok) return;
+				const data = await response.json();
+
+				setStatus({
+					stage: data.stage,
+					progress: data.progress,
+					message: data.message,
+					error: data.error,
+				});
+
+				if (data.stage === "complete" || data.error) {
+					clearPolling();
+					setProcessing(false);
+				}
+			} catch (error) {
+				clearPolling();
+				setProcessing(false);
+			}
+		}, 2000);
+	};
+
+	const handleProcess = async () => {
+		if (uploadedFiles.length === 0) return;
+
+		clearPolling();
+		setProcessing(true);
+		setStatus({ stage: "upload", progress: 0, message: "Uploading files..." });
+
+		try {
+			console.log(`🚀 Initializing upload for ${uploadedFiles.length} files`);
+			
+			// Initialize job
+			const initResponse = await fetch("/api/one-click/upload", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					fileCount: uploadedFiles.length,
+					folderStructure: Array.from(folderStructure.keys()),
+				}),
+			});
+
+			if (!initResponse.ok) {
+				throw new Error(`Failed to initialize: ${initResponse.statusText}`);
+			}
+
+			const { jobId: newJobId, uploadUrl, metadata } = await initResponse.json();
+			console.log("✅ Upload initialized:", { newJobId, uploadUrl, metadata });
+			
+			setJobId(newJobId);
+
+			// Upload all files with TUS
+			console.log("📤 Starting TUS upload for all files...");
+			let uploadedCount = 0;
+
+			for (const file of uploadedFiles) {
+				// @ts-ignore
+				const relativePath = file.webkitRelativePath || file.name;
+				
+				const fileMetadata = {
+					...metadata,
+					filename: file.name,
+					filetype: file.type || "application/pdf",
+					relativePath: relativePath,
+				};
+
+				await new Promise<void>((resolve, reject) => {
+					const upload = new tus.Upload(file, {
+						endpoint: uploadUrl,
+						metadata: fileMetadata,
+						retryDelays: [0, 1000, 3000, 5000],
+						chunkSize: 5 * 1024 * 1024,
+						onError: (error) => {
+							console.error(`❌ TUS upload failed for ${file.name}:`, error);
+							reject(error);
+						},
+						onProgress: (bytesUploaded, bytesTotal) => {
+							const fileProgress = (bytesUploaded / bytesTotal) * 100;
+							const totalProgress = ((uploadedCount + fileProgress / 100) / uploadedFiles.length) * 100;
+							console.log(`📊 Upload progress: ${file.name} ${fileProgress.toFixed(0)}% (Total: ${totalProgress.toFixed(0)}%)`);
+							setStatus(prev => ({
+								...prev,
+								progress: Math.round(totalProgress),
+								message: `Uploading ${uploadedCount + 1}/${uploadedFiles.length}: ${file.name}`,
+							}));
+						},
+						onSuccess: () => {
+							console.log(`✅ TUS upload complete for: ${file.name}`);
+							uploadedCount++;
+							resolve();
+						},
+					});
+					upload.start();
+				});
+			}
+
+			console.log("✅ All files uploaded!");
+			
+			// Start processing
+			console.log("🔧 Starting processing pipeline...");
+			const processResponse = await fetch("/api/one-click/process", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ jobId: newJobId }),
+			});
+
+			if (!processResponse.ok) {
+				throw new Error(`Processing failed: ${processResponse.statusText}`);
+			}
+
+			console.log("✅ Processing started, polling for updates...");
+			startPolling(newJobId);
+		} catch (error) {
+			console.error("❌ Process failed:", error);
+			setStatus({
+				stage: "upload",
+				progress: 0,
+				message: "Upload failed",
+				error: error instanceof Error ? error.message : String(error),
+			});
+			setProcessing(false);
+		}
+	};
+
+	const handleDownload = async () => {
+		if (!jobId) return;
+
+		try {
+			console.log("📥 Downloading results...");
+			const response = await fetch(`/api/one-click/download?jobId=${jobId}`);
+
+			if (!response.ok) {
+				throw new Error("Download failed");
+			}
+
+			const blob = await response.blob();
+			const url = window.URL.createObjectURL(blob);
+			const a = document.createElement("a");
+			a.href = url;
+			a.download = `processed-${jobId}.zip`;
+			document.body.appendChild(a);
+			a.click();
+			window.URL.revokeObjectURL(url);
+			document.body.removeChild(a);
+			console.log("✅ Download complete!");
+		} catch (error) {
+			console.error("❌ Download failed:", error);
+		}
+	};
+
+	const resetProcess = () => {
+		setUploadedFiles([]);
+		setFolderStructure(new Map());
+		setProcessing(false);
+		setStatus({
+			stage: "upload",
+			progress: 0,
+			message: "Ready to process",
+		});
+		setJobId(null);
+		clearPolling();
+	};
+
+	return (
+		<div className="container mx-auto p-6 max-w-6xl">
+			<div className="mb-8 text-center">
+				<h1 className="text-4xl font-bold mb-2">One-Click Processing</h1>
+				<p className="text-muted-foreground">
+					Upload PDF files or folders → Convert → Anonymize → Humanize → Format → Download
+				</p>
+			</div>
+
+			{/* Upload Area */}
+			{!processing && uploadedFiles.length === 0 && (
+				<Card className="p-8 mb-6">
+					<div {...getRootProps()} className="cursor-pointer">
+						<input {...getInputProps()} />
+						<input
+							type="file"
+							ref={fileInputRef}
+							onChange={handleFolderSelect}
+							// @ts-ignore
+							webkitdirectory=""
+							directory=""
+							multiple
+							style={{ display: 'none' }}
+						/>
+						<div className="text-center">
+							<Upload className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+							<p className="text-lg font-medium mb-2">
+								{isDragActive
+									? "Drop files here..."
+									: "Drag & drop PDF files here"}
+							</p>
+							<p className="text-sm text-muted-foreground mb-4">
+								Or click below to select files or folders
+							</p>
+							<div className="flex gap-4 justify-center">
+								<Button onClick={() => document.querySelector<HTMLInputElement>('input[type="file"]:not([webkitdirectory])')?.click()}>
+									<FileText className="mr-2 h-4 w-4" />
+									Select Files
+								</Button>
+								<Button variant="outline" onClick={() => fileInputRef.current?.click()}>
+									<Upload className="mr-2 h-4 w-4" />
+									Select Folder
+								</Button>
+							</div>
+						</div>
+					</div>
+				</Card>
+			)}
+
+			{/* File Preview */}
+			{uploadedFiles.length > 0 && !processing && (
+				<Card className="p-6 mb-6">
+					<div className="flex items-center justify-between mb-4">
+						<div className="flex items-center gap-3">
+							<FileText className="h-8 w-8 text-blue-500" />
+							<div>
+								<p className="font-medium">{uploadedFiles.length} PDF file(s) selected</p>
+								<p className="text-sm text-muted-foreground">
+									{Array.from(folderStructure.keys()).length} folder(s)
+								</p>
+							</div>
+						</div>
+						<div className="flex gap-2">
+							<Button onClick={resetProcess} variant="outline" size="sm">
+								Clear
+							</Button>
+							<Button onClick={handleProcess} size="sm">
+								<Sparkles className="mr-2 h-4 w-4" />
+								Process All
+							</Button>
+						</div>
+					</div>
+					<div className="max-h-60 overflow-y-auto space-y-2">
+						{Array.from(folderStructure.entries()).map(([folder, files]) => (
+							<div key={folder} className="border-l-2 border-blue-500 pl-4">
+								<p className="text-sm font-medium text-muted-foreground mb-1">
+									📁 {folder}
+								</p>
+								{files.map((file, idx) => (
+									<p key={idx} className="text-sm pl-4">
+										📄 {file.name}
+									</p>
+								))}
+							</div>
+						))}
+					</div>
+				</Card>
+			)}
+
+			{/* Processing Stage Indicators */}
+			{processing && (
+				<Card className="p-8 mb-6">
+					<div className="space-y-6">
+					<div className='inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-sm'>
+						<Sparkles className='w-4 h-4' />
+						<span>One-Click Processing</span>
+					</div>
+					<h1 className='text-5xl font-bold'>
+						Process Your{" "}
+						<span className='bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent'>
+							Documents
+						</span>
+					</h1>
+					<p className='text-xl text-slate-400 max-w-2xl mx-auto'>
+						Upload → Convert → Anonymize → Humanize → Check → Format → Download
+					</p>
+				</div>
+
+				{/* Upload Section */}
+				<section>
+					<Card className='border-dashed border-2 border-white/20 bg-white/5 backdrop-blur'>
+						<div {...getRootProps()} className='p-12 cursor-pointer'>
+							<input {...getInputProps()} />
+							<div className='text-center space-y-4'>
+								<div className='w-20 h-20 mx-auto rounded-full bg-indigo-500/20 flex items-center justify-center'>
+									{uploadedFile ? (
+										<FileText className='w-10 h-10 text-indigo-400' />
+									) : (
+										<Upload className='w-10 h-10 text-indigo-400' />
+									)}
+								</div>
+								{uploadedFile ? (
+									<div>
+										<h3 className='text-xl font-semibold mb-2'>
+											{uploadedFile.name}
+										</h3>
+										<p className='text-slate-400 mb-4'>
+											{(uploadedFile.size / 1024 / 1024).toFixed(2)} MB
+										</p>
+										<Button
+											size='lg'
+											onClick={(e) => {
+												e.stopPropagation();
+												handleProcess();
+											}}
+											disabled={processing}
+											className='gap-2'>
+											{processing ? (
+												<>
+													<Loader2 className='w-5 h-5 animate-spin' />
+													Processing...
+												</>
+											) : (
+												<>
+													<Sparkles className='w-5 h-5' />
+													Start Processing
+												</>
+											)}
+										</Button>
+									</div>
+								) : (
+									<div>
+										<h3 className='text-xl font-semibold mb-2'>
+											{isDragActive
+												? "Drop your file here"
+												: "Upload PDF or DOCX"}
+										</h3>
+										<p className='text-slate-400 mb-4'>
+											Drag and drop or click to browse
+										</p>
+									</div>
+								)}
+							</div>
+						</div>
+					</Card>
+				</section>
+
+				{/* Processing Section */}
+				{(processing || status.stage !== "upload") && (
+					<section className='space-y-6'>
+						<div className='text-center'>
+							<h2 className='text-3xl font-bold mb-2'>Processing Pipeline</h2>
+							<p className='text-slate-400'>{status.message}</p>
+						</div>
+
+						{/* Visual Pipeline */}
+						<div className='grid md:grid-cols-5 gap-4'>
+							{STAGES.map((stage, index) => {
+								const Icon = stage.icon;
+								const active = isStageActive(stage.id);
+								const complete = isStageComplete(stage.id);
+								const current = status.stage === stage.id;
+
+								return (
+									<div key={stage.id} className='relative'>
+										<Card
+											className={`p-6 text-center transition-all duration-500 ${
+												active
+													? `bg-gradient-to-br ${getStageColor(stage.color)} backdrop-blur`
+													: "bg-white/5 border-white/10 opacity-50"
+											} ${current ? "ring-2 ring-indigo-500 scale-105" : ""}`}>
+											<div className='flex flex-col items-center space-y-3'>
+												<div
+													className={`w-12 h-12 rounded-full flex items-center justify-center ${
+														complete
+															? "bg-green-500/20"
+															: active
+															? "bg-white/10"
+															: "bg-white/5"
+													}`}>
+													{complete ? (
+														<CheckCircle2 className='w-6 h-6 text-green-400' />
+													) : current ? (
+														<Icon className='w-6 h-6 text-indigo-400 animate-pulse' />
+													) : (
+														<Icon className='w-6 h-6 text-slate-500' />
+													)}
+												</div>
+												<div>
+													<h3 className='font-semibold text-sm'>{stage.title}</h3>
+													<p className='text-xs text-slate-400'>
+														{stage.description}
+													</p>
+												</div>
+												{current && (
+													<Loader2 className='w-4 h-4 text-indigo-400 animate-spin' />
+												)}
+											</div>
+										</Card>
+
+										{/* Connector */}
+										{index < STAGES.length - 1 && (
+											<div className='hidden md:block absolute top-1/2 -right-2 transform -translate-y-1/2 z-10'>
+												<ChevronRight
+													className={`w-4 h-4 ${
+														complete ? "text-green-400" : "text-slate-600"
+													}`}
+												/>
+											</div>
+										)}
+									</div>
+								);
+							})}
+						</div>
+
+						{/* Progress Bar */}
+						<Card className='p-6 bg-white/5 border-white/10'>
+							<div className='space-y-3'>
+								<div className='flex items-center justify-between text-sm'>
+									<span className='text-slate-400'>Overall Progress</span>
+									<span className='font-semibold'>{status.progress}%</span>
+								</div>
+								<div className='h-2 bg-slate-800 rounded-full overflow-hidden'>
+									<div
+										className='h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-500'
+										style={{ width: `${status.progress}%` }}
+									/>
+								</div>
+							</div>
+						</Card>
+
+						{/* Error Display */}
+						{status.error && (
+							<Card className='p-6 bg-red-500/10 border-red-500/30'>
+								<div className='flex items-start gap-3'>
+									<AlertCircle className='w-5 h-5 text-red-400 flex-shrink-0 mt-0.5' />
+									<div>
+										<h3 className='font-semibold text-red-400 mb-1'>
+											Error Occurred
+										</h3>
+										<p className='text-sm text-slate-300'>{status.error}</p>
+									</div>
+								</div>
+							</Card>
+						)}
+					</section>
+				)}
+
+				{/* Download Section */}
+				{status.stage === "complete" && !status.error && (
+					<section>
+						<Card className='p-12 bg-gradient-to-br from-green-500/10 to-emerald-500/10 border-green-500/30 backdrop-blur text-center'>
+							<div className='space-y-6'>
+								<div className='w-20 h-20 mx-auto rounded-full bg-green-500/20 flex items-center justify-center'>
+									<CheckCircle2 className='w-10 h-10 text-green-400' />
+								</div>
+								<div>
+									<h2 className='text-3xl font-bold mb-2'>
+										Processing Complete!
+									</h2>
+									<p className='text-slate-400 mb-6'>
+										Your document has been successfully processed and is ready to
+										download
+									</p>
+									<Button
+										size='lg'
+										onClick={handleDownload}
+										className='gap-2 bg-green-600 hover:bg-green-700'>
+										<Download className='w-5 h-5' />
+										Download Processed Files
+									</Button>
+								</div>
+							</div>
+						</Card>
+					</section>
+				)}
+			</div>
+		</div>
+	);
+}

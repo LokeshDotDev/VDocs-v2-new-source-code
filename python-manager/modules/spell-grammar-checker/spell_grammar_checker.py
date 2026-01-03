@@ -112,7 +112,7 @@ def fix_spelling(text: str) -> str:
 def fix_grammar(text: str) -> str:
     """
     Fix grammar errors using LanguageTool.
-    Only applies safe, clear corrections.
+    MAXIMUM POWER mode: Apply ALL corrections for perfect grammar/fluency.
     """
     if not text or not text.strip() or len(text.strip()) < 3:
         return text
@@ -138,17 +138,13 @@ def fix_grammar(text: str) -> str:
 
             replacement = match.replacements[0]
 
-            # Allow grammar and style to boost fluency/clarity, but keep guardrails
+            # 🔥🔥 MAXIMUM POWER: NO LIMITS on changes for perfect grammar/fluency
             start, end = match.offset, match.offset + match.errorLength
             original_fragment = corrected[start:end]
             if not original_fragment:
                 continue
 
-            # Allow moderate phrasing changes (up to 2x or +16 chars)
-            delta = abs(len(replacement) - len(original_fragment))
-            if delta > max(16, 2 * len(original_fragment)):
-                continue
-
+            # 🔥🔥 Apply ALL corrections (removed length restriction)
             corrected = corrected[:start] + replacement + corrected[end:]
 
         return f"{leading_ws}{corrected}{trailing_ws}"

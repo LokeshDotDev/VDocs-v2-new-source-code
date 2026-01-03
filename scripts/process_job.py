@@ -7,6 +7,8 @@ import shutil
 import io
 import time
 from pathlib import Path
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from uuid import uuid4
 
 # Add paths to sys.path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -74,13 +76,130 @@ except Exception as e:
     traceback.print_exc()
     sys.exit(1)
 
+def is_valid_docx(path: str) -> bool:
+    import zipfile
+    try:
+        with zipfile.ZipFile(path, "r") as zf:
+            return zf.testzip() is None
+    except zipfile.BadZipFile:
+        return False
+
+
+def process_single_file(args):
+    """Process one file (convert/redact/humanize/format) and return output path + key."""
+    file_key, job_id, temp_dir = args
+    started = time.perf_counter()
+    worker_dir = tempfile.mkdtemp(dir=temp_dir, prefix="work_")
+    try:
+        filename = os.path.basename(file_key)
+        local_path = os.path.join(worker_dir, filename)
+
+        # Download
+        data = minio_handler.download_file(file_key)
+        with open(local_path, "wb") as f:
+            f.write(data.getbuffer())
+
+        docx_path = local_path
+
+        if filename.lower().endswith(".pdf"):
+            print("Converting PDF to DOCX...")
+            with open(local_path, "rb") as f:
+                pdf_bytes = io.BytesIO(f.read())
+            docx_bytes = PDFConverter.convert_pdf_to_docx(pdf_bytes)
+            docx_filename = os.path.splitext(filename)[0] + ".docx"
+            docx_path = os.path.join(worker_dir, docx_filename)
+            with open(docx_path, "wb") as f:
+                f.write(docx_bytes.getbuffer())
+            if not is_valid_docx(docx_path):
+                print(f"[ERROR] PDF-to-DOCX conversion produced a corrupted DOCX: {docx_path}")
+                return None
+        elif not filename.lower().endswith(".docx"):
+            print(f"Skipping non-docx/pdf file: {filename}")
+            return None
+        else:
+            if not is_valid_docx(docx_path):
+                print(f"[ERROR] Input DOCX is corrupted: {docx_path}")
+                return None
+
+        # Redact
+        print("Redacting...")
+        try:
+            temp_unzip = unzip_docx(docx_path)
+            document_xml = os.path.join(temp_unzip, "word/document.xml")
+            tree = load_xml(document_xml)
+            identity = detect_identity(tree)
+            shutil.rmtree(temp_unzip)
+            print(f"Detected identity: name={identity.get('name')}, roll_no={identity.get('roll_no')}")
+        except Exception as e:
+            print(f"Failed to detect identity: {e}")
+            identity = {"name": None, "roll_no": None}
+
+        redacted_path = os.path.join(worker_dir, "redacted_" + os.path.basename(docx_path))
+        anonymize_docx(
+            docx_path,
+            redacted_path,
+            name=identity.get("name"),
+            roll_no=identity.get("roll_no"),
+        )
+        if not is_valid_docx(redacted_path):
+            print(f"[ERROR] Redactor produced a corrupted DOCX: {redacted_path}")
+            return None
+
+        # Humanize
+        print("Humanizing...")
+        humanized_path = os.path.join(worker_dir, "humanized_" + os.path.basename(docx_path))
+        try:
+            docx_humanize_lxml.process_docx(redacted_path, humanized_path, skip_detect=True)
+            if not is_valid_docx(humanized_path):
+                print(f"[ERROR] Humanizer produced a corrupted DOCX: {humanized_path}")
+                shutil.copy(redacted_path, humanized_path)
+        except Exception as e:
+            print(f"Humanizer failed: {e}")
+            shutil.copy(redacted_path, humanized_path)
+
+        # Spell / Grammar
+        print("Fixing spelling and grammar...")
+        final_path = os.path.join(worker_dir, "final_" + os.path.basename(docx_path))
+        try:
+            stats = spell_grammar_checker.process_docx(humanized_path, final_path)
+            print(f"  Fixed {stats['total_changes']} spelling/grammar errors")
+            if not is_valid_docx(final_path):
+                print(f"[ERROR] Spell checker produced a corrupted DOCX: {final_path}")
+                shutil.copy(humanized_path, final_path)
+        except Exception as e:
+            print(f"Spell/grammar check failed: {e}")
+            shutil.copy(humanized_path, final_path)
+
+        # Formatting
+        print("Applying standard formatting...")
+        formatted_path = os.path.join(worker_dir, "formatted_" + os.path.basename(docx_path))
+        try:
+            format_stats = formatter.format_docx_via_onlyoffice(final_path, formatted_path)
+            print(f"  Formatting status: {format_stats['status']}")
+            print(f"  Processing time: {format_stats['processing_time_ms']}ms")
+            if not is_valid_docx(formatted_path):
+                print(f"[ERROR] Formatter produced a corrupted DOCX: {formatted_path}")
+                shutil.copy(final_path, formatted_path)
+        except Exception as e:
+            print(f"Formatting failed: {e}")
+            shutil.copy(final_path, formatted_path)
+
+        elapsed = time.perf_counter() - started
+        print(f"[TIMER] {filename} done in {elapsed:.2f}s")
+        return formatted_path, file_key
+    except Exception as e:
+        print(f"[ERROR] Worker failed for {file_key}: {e}")
+        return None
+    finally:
+        # Do not cleanup worker_dir here; caller zips from formatted path inside worker_dir
+        pass
+
+
 def process_job(job_id):
     print(f"Processing job: {job_id}")
-    
-    # 1. Setup paths
+
     raw_prefix = f"jobs/{job_id}/raw/"
-    
-    # 2. List files
+
     try:
         objects = minio_handler.client.list_objects(minio_handler.bucket, prefix=raw_prefix, recursive=True)
         files = [obj.object_name for obj in objects]
@@ -93,157 +212,69 @@ def process_job(job_id):
         return False
 
     print(f"Found {len(files)} files.")
-    
-    # Create temp dir for processing
+
+    env_workers = os.getenv("ONECLICK_MAX_WORKERS")
+    if env_workers:
+        try:
+            max_workers = max(1, int(env_workers))
+        except ValueError:
+            max_workers = max(1, os.cpu_count() - 1)
+    else:
+        # Default: modest cap to reduce thrash on 16 GB machines
+        max_workers = min(4, max(1, os.cpu_count() - 1))
+    print(f"Using up to {max_workers} parallel workers")
+
     with tempfile.TemporaryDirectory() as temp_dir:
         output_files = []
-        
-        for file_key in files:
-            print(f"Processing {file_key}...")
-            filename = os.path.basename(file_key)
-            local_path = os.path.join(temp_dir, filename)
-            
-            # Download
-            try:
-                data = minio_handler.download_file(file_key)
-                with open(local_path, "wb") as f:
-                    f.write(data.getbuffer())
-            except Exception as e:
-                print(f"Failed to download {file_key}: {e}")
-                continue
-            
 
-            # Convert if PDF
-            docx_path = local_path
-            def is_valid_docx(path):
-                import zipfile
-                try:
-                    with zipfile.ZipFile(path, 'r') as zf:
-                        return zf.testzip() is None
-                except zipfile.BadZipFile:
-                    return False
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            future_map = {executor.submit(process_single_file, (file_key, job_id, temp_dir)): file_key for file_key in files}
 
-            if filename.lower().endswith(".pdf"):
-                print("Converting PDF to DOCX...")
+            completed = 0
+            for future in as_completed(future_map):
+                file_key = future_map[future]
+                completed += 1
                 try:
-                    with open(local_path, "rb") as f:
-                        pdf_bytes = io.BytesIO(f.read())
-                    docx_bytes = PDFConverter.convert_pdf_to_docx(pdf_bytes)
-                    docx_filename = os.path.splitext(filename)[0] + ".docx"
-                    docx_path = os.path.join(temp_dir, docx_filename)
-                    with open(docx_path, "wb") as f:
-                        f.write(docx_bytes.getbuffer())
-                    # Validate converted DOCX
-                    if not is_valid_docx(docx_path):
-                        print(f"[ERROR] PDF-to-DOCX conversion produced a corrupted DOCX: {docx_path}")
-                        continue
+                    result = future.result()
+                    if result:
+                        output_files.append(result)
+                        print(f"[Progress] {completed}/{len(files)} finished")
+                    else:
+                        print(f"[Progress] {completed}/{len(files)} skipped or failed")
                 except Exception as e:
-                    print(f"Conversion failed: {e}")
-                    continue
-            elif not filename.lower().endswith(".docx"):
-                print(f"Skipping non-docx/pdf file: {filename}")
-                continue
-            else:
-                # Validate original DOCX
-                if not is_valid_docx(docx_path):
-                    print(f"[ERROR] Input DOCX is corrupted: {docx_path}")
-                    continue
+                    print(f"[ERROR] Future failed for {file_key}: {e}")
 
+        if not output_files:
+            print("No files succeeded; aborting zip upload.")
+            return False
 
-            # Reduct
-            print("Redacting...")
-            
-            # Detect identity first
-            try:
-                temp_unzip = unzip_docx(docx_path)
-                document_xml = os.path.join(temp_unzip, "word/document.xml")
-                tree = load_xml(document_xml)
-                identity = detect_identity(tree)
-                shutil.rmtree(temp_unzip)
-                print(f"Detected identity: name={identity.get('name')}, roll_no={identity.get('roll_no')}")
-            except Exception as e:
-                print(f"Failed to detect identity: {e}")
-                identity = {"name": None, "roll_no": None}
-            
-            redacted_path = os.path.join(temp_dir, "redacted_" + os.path.basename(docx_path))
-            try:
-                anonymize_docx(
-                    docx_path, 
-                    redacted_path,
-                    name=identity.get("name"),
-                    roll_no=identity.get("roll_no")
-                )
-                # Validate redacted DOCX
-                if not is_valid_docx(redacted_path):
-                    print(f"[ERROR] Redactor produced a corrupted DOCX: {redacted_path}")
-                    continue
-            except Exception as e:
-                print(f"Redaction failed: {e}")
-                continue
-
-
-            # Humanize
-            print("Humanizing...")
-            humanized_path = os.path.join(temp_dir, "humanized_" + os.path.basename(docx_path))
-            try:
-                docx_humanize_lxml.process_docx(redacted_path, humanized_path, skip_detect=True)
-                # Validate humanized DOCX
-                if not is_valid_docx(humanized_path):
-                    print(f"[ERROR] Humanizer produced a corrupted DOCX: {humanized_path}")
-                    shutil.copy(redacted_path, humanized_path)
-            except Exception as e:
-                print(f"Humanizer failed: {e}")
-                shutil.copy(redacted_path, humanized_path)
-
-            # Fix Spelling & Grammar
-            print("Fixing spelling and grammar...")
-            final_path = os.path.join(temp_dir, "final_" + os.path.basename(docx_path))
-            try:
-                stats = spell_grammar_checker.process_docx(humanized_path, final_path)
-                print(f"  Fixed {stats['total_changes']} spelling/grammar errors")
-                # Validate fixed DOCX
-                if not is_valid_docx(final_path):
-                    print(f"[ERROR] Spell checker produced a corrupted DOCX: {final_path}")
-                    # Fallback to humanized version
-                    shutil.copy(humanized_path, final_path)
-            except Exception as e:
-                print(f"Spell/grammar check failed: {e}")
-                # Fallback to humanized if spell check fails
-                shutil.copy(humanized_path, final_path)
-            
-            # Apply Standard Formatting (NEW STEP)
-            print("Applying standard formatting...")
-            formatted_path = os.path.join(temp_dir, "formatted_" + os.path.basename(docx_path))
-            try:
-                format_stats = formatter.format_docx_via_onlyoffice(final_path, formatted_path)
-                print(f"  Formatting status: {format_stats['status']}")
-                print(f"  Processing time: {format_stats['processing_time_ms']}ms")
-                # Validate formatted DOCX
-                if not is_valid_docx(formatted_path):
-                    print(f"[ERROR] Formatter produced a corrupted DOCX: {formatted_path}")
-                    # Fallback to final (spell-checked) version
-                    shutil.copy(final_path, formatted_path)
-            except Exception as e:
-                print(f"Formatting failed: {e}")
-                # Fallback to spell-checked version if formatting fails
-                shutil.copy(final_path, formatted_path)
-            
-            output_files.append(formatted_path)
-        
-        # Zip Results
         zip_path = os.path.join(temp_dir, "result.zip")
-        print("Zipping results...")
+        print("Zipping results with folder structure...")
         with zipfile.ZipFile(zip_path, 'w') as zipf:
-            for file in output_files:
-                # Remove prefixes to get clean names
-                basename = os.path.basename(file)
+            for file_path, original_key in output_files:
+                relative_path = original_key.replace(f"jobs/{job_id}/raw/", "")
+                path_parts = relative_path.split('/')
+                if len(path_parts) > 1:
+                    relative_path = '/'.join(path_parts[1:])
+                else:
+                    relative_path = path_parts[0]
+
+                filename = os.path.basename(relative_path)
+                folder = os.path.dirname(relative_path)
+
                 for prefix in ["formatted_", "final_", "humanized_", "redacted_"]:
-                    if basename.startswith(prefix):
-                        basename = basename[len(prefix):]
+                    if filename.startswith(prefix):
+                        filename = filename[len(prefix):]
                         break
-                zipf.write(file, basename)
-        
-        # Upload Zip
+
+                if filename.lower().endswith('.pdf'):
+                    filename = filename[:-4] + '.docx'
+
+                zip_file_path = os.path.join(folder, filename) if folder else filename
+
+                print(f"  Adding: {zip_file_path}")
+                zipf.write(file_path, zip_file_path)
+
         zip_key = f"jobs/{job_id}/result.zip"
         print(f"Uploading zip to {zip_key}...")
         try:

@@ -139,6 +139,14 @@ export function createTusServer(): Server {
 				totalParts,
 			});
 
+			// Clean metadata - ensure all values are strings, not null
+			const cleanMetadata: Record<string, string> = {};
+			for (const [key, value] of Object.entries(metadata)) {
+				if (value !== null && value !== undefined) {
+					cleanMetadata[key] = String(value);
+				}
+			}
+
 			// Handle multipart uploads
 			if (multipartId && partIndex !== undefined && totalParts && totalParts > 1) {
 				await handleMultipartUpload(
@@ -147,20 +155,29 @@ export function createTusServer(): Server {
 					totalParts,
 					filePath,
 					upload.id,
-					metadata
+					cleanMetadata
 				);
 				return; // Don't process as single file
 			}
 
 			// Handle single file upload
-			await handleSingleFileUpload(upload, filePath, metadata);
+			await handleSingleFileUpload(upload, filePath, cleanMetadata);
 		} catch (error) {
 			// Track failed uploads for potential retry
 			const errorMessage = error instanceof Error ? error.message : String(error);
+			
+			// Clean metadata for failed upload tracking
+			const cleanMetadata: Record<string, string> = {};
+			for (const [key, value] of Object.entries(metadata)) {
+				if (value !== null && value !== undefined) {
+					cleanMetadata[key] = String(value);
+				}
+			}
+			
 			failedUploads.set(upload.id, {
 				uploadId: upload.id,
 				filePath,
-				metadata,
+				metadata: cleanMetadata,
 				error: errorMessage,
 				timestamp: new Date(),
 			});
@@ -308,11 +325,10 @@ async function uploadAssembledFile(
 		(assembly.metadata.userId as string) || "default-user";
 	const stage = (assembly.metadata.stage as string) || "raw";
 	const filename = assembly.originalFilename;
-	const relativePath = filename;
+	const relativePath = (assembly.metadata.relativePath as string) || filename;
 
 	const objectKey = buildObjectKey({
-		userId,
-		uploadId: multipartId,
+		jobId: multipartId,
 		stage,
 		relativePath,
 	});

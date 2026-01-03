@@ -25,15 +25,15 @@ NSMAP = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
 HUMANIZER_URL = os.environ.get("HUMANIZER_URL", "http://localhost:8000/humanize")
 
 # Tuning knobs (env-driven) for aggressiveness and safety guards
-# Balanced for readability (fluency/clarity) while reducing AI detection
-AGGRESSIVE = os.environ.get("HUMANIZER_AGGRESSIVE", "0") in ("1", "true", "True")
-HIGH_P_SYN = float(os.environ.get("HUMANIZER_P_SYN_HIGH", "0.50"))  # Reduced for better fluency
-HIGH_P_TRANS = float(os.environ.get("HUMANIZER_P_TRANS_HIGH", "0.30"))  # Reduced for better clarity
-MID_P_SYN = float(os.environ.get("HUMANIZER_P_SYN_LOW", "0.35"))  # More conservative
-MID_P_TRANS = float(os.environ.get("HUMANIZER_P_TRANS_LOW", "0.20"))  # More conservative
-MAX_LEN_DELTA = float(os.environ.get("HUMANIZER_MAX_LEN_DELTA", "0.15"))  # Tighter to preserve structure
-SIMILARITY_MAX = float(os.environ.get("HUMANIZER_SIMILARITY_MAX", "0.85"))  # Higher = less change = better readability
-MAX_ATTEMPTS = int(os.environ.get("HUMANIZER_ATTEMPTS", "3"))  # Fewer attempts = less over-processing
+# MAX HUMANIZATION with fewer awkward fillers (reduced transitions)
+AGGRESSIVE = os.environ.get("HUMANIZER_AGGRESSIVE", "1") in ("1", "true", "True")
+HIGH_P_SYN = float(os.environ.get("HUMANIZER_P_SYN_HIGH", "0.92"))  # keep synonym strength high
+HIGH_P_TRANS = float(os.environ.get("HUMANIZER_P_TRANS_HIGH", "0.38"))  # lower transition insertions to avoid "In fact"/"Consequently"
+MID_P_SYN = float(os.environ.get("HUMANIZER_P_SYN_LOW", "0.78"))
+MID_P_TRANS = float(os.environ.get("HUMANIZER_P_TRANS_LOW", "0.28"))
+MAX_LEN_DELTA = float(os.environ.get("HUMANIZER_MAX_LEN_DELTA", "0.40"))
+SIMILARITY_MAX = float(os.environ.get("HUMANIZER_SIMILARITY_MAX", "0.58"))  # still forces strong change but slightly relaxed
+MAX_ATTEMPTS = int(os.environ.get("HUMANIZER_ATTEMPTS", "12"))
 
 
 def _post_json(url: str, payload: dict, timeout: int = 60) -> dict:
@@ -185,16 +185,23 @@ def _humanize_text_node(text_node: etree._Element) -> None:
                     else:
                         print("[ERROR] No parent XML context available.")
                     return  # Skip this node, continue with others
-                print(f"[DEBUG] Humanizer input: {repr(stripped)}")
-                print(f"[DEBUG] Humanizer candidate: {repr(candidate)}")
+                
                 if not candidate or not candidate.strip():
                     continue
+                
+                # Always keep at least one candidate (even if checks fail)
+                if best is None:
+                    best = candidate
+                
                 # Basic guards: length, similarity, digits preservation
                 if not _length_ratio_ok(stripped, candidate, MAX_LEN_DELTA):
-                    continue
+                    continue  # Try another, but keep 'best' if we have one
+                
+                # Check if changed enough (only in AGGRESSIVE mode)
                 if AGGRESSIVE and not _changed_enough(stripped, candidate):
-                    # If too similar, retry with same params (to get different paraphrase)
+                    # Too similar, retry with same params
                     continue
+                
                 # Ensure numeric tokens sequence count doesn't change
                 onums, nnums = _numbers_sequence(stripped), _numbers_sequence(candidate)
                 if len(onums) != len(nnums):
@@ -210,10 +217,12 @@ def _humanize_text_node(text_node: etree._Element) -> None:
                         i += 1
                         return val
                     candidate = re.sub(r"\d+[\d,\.]*", repl, candidate)
+                
+                # This candidate passed all checks!
                 best = candidate
                 break
-            if best:
-                break
+            if best and _changed_enough(stripped, best):
+                break  # Found good candidate, stop trying
 
         if best and best.strip():
             best = _apply_casing_like(stripped, best)
