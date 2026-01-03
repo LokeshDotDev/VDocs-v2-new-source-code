@@ -1,379 +1,337 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader, CheckCircle, Download, AlertCircle } from "lucide-react";
-import { DocumentPreview } from "@/components/humanizer/DocumentPreview";
+import { Card, CardContent } from "@/components/ui/card";
+import { Copy, Loader, CheckCircle2, AlertCircle } from "lucide-react";
 
-interface HumanizationResult {
-	fileKey: string;
-	fileName: string;
-	originalLength: number;
-	humanizedLength: number;
-	changesApplied: number;
-	outputFileKey: string;
-	processingTime: number;
-}
-
-interface FileSelection {
-	fileKey: string;
-	fileName: string;
-	selected: boolean;
+interface ProcessingState {
+	stage: "idle" | "humanizing" | "grammar-check" | "complete" | "error";
+	progress: number;
+	message: string;
 }
 
 export default function HumanizerPage() {
-	const [files, setFiles] = useState<FileSelection[]>([]);
-	const [results, setResults] = useState<HumanizationResult[]>([]);
-	const [downloadingAll, setDownloadingAll] = useState(false);
-	const [jobId, setJobId] = useState<string | null>(null);
-	const [loading, setLoading] = useState(false);
-	const [progress, setProgress] = useState(0);
-	const [autoFileKey, setAutoFileKey] = useState<string | null>(null);
-
-	// Check for auto-selected file from AI detection page
-	useEffect(() => {
-		const fileKey = sessionStorage.getItem("humanizerFileKey");
-		if (fileKey) {
-			setAutoFileKey(fileKey);
-			sessionStorage.removeItem("humanizerFileKey");
-		}
-	}, []);
-
-	// Fetch files from MinIO
-	useEffect(() => {
-		const fetchFiles = async () => {
-			try {
-				const response = await fetch("/api/files/docx-list");
-				if (!response.ok) {
-					console.error("list files failed", response.status);
-					setFiles([]);
-					return;
-				}
-				const data = await response.json();
-				const items = Array.isArray(data?.files) ? data.files : [];
-				const docxFiles = items.map((f: { key: string; name?: string }) => ({
-					fileKey: f.key,
-					fileName: f.name || f.key.split("/").pop() || f.key,
-					selected: f.key === autoFileKey,
-				}));
-				setFiles(docxFiles);
-			} catch (error) {
-				console.error("Error fetching files:", error);
-				setFiles([]);
-			}
-		};
-
-		fetchFiles();
-	}, [autoFileKey]);
-
-	// Poll job status
-	useEffect(() => {
-		if (!jobId) return;
-
-		const interval = setInterval(async () => {
-			try {
-				const response = await fetch(`/api/humanizer/job/${jobId}`);
-				const data = await response.json();
-
-				if (data.success) {
-					setProgress(data.job.progress);
-
-					if (data.job.status === "completed") {
-						setResults(data.job.results);
-						setLoading(false);
-						setJobId(null);
-						clearInterval(interval);
-					} else if (data.job.status === "failed") {
-						setLoading(false);
-						setJobId(null);
-						clearInterval(interval);
-						alert("Humanization failed");
-					}
-				}
-			} catch (error) {
-				console.error("Error polling job:", error);
-			}
-		}, 2000);
-
-		return () => clearInterval(interval);
-	}, [jobId]);
-
-	const handleFileSelection = (fileKey: string) => {
-		setFiles(
-			files.map((f) =>
-				f.fileKey === fileKey ? { ...f, selected: !f.selected } : f
-			)
-		);
-	};
-
-	const handleSelectAll = () => {
-		setFiles((prevFiles) => prevFiles.map((f) => ({ ...f, selected: true })));
-	};
-
-	const handleClearAll = () => {
-		setFiles((prevFiles) => prevFiles.map((f) => ({ ...f, selected: false })));
-	};
+	const [inputText, setInputText] = useState("");
+	const [outputText, setOutputText] = useState("");
+	const [processingState, setProcessingState] = useState<ProcessingState>({
+		stage: "idle",
+		progress: 0,
+		message: "",
+	});
+	const [processingTime, setProcessingTime] = useState(0);
+	const [copySuccess, setCopySuccess] = useState(false);
+	const inputRef = useRef<HTMLTextAreaElement>(null);
+	const outputRef = useRef<HTMLTextAreaElement>(null);
 
 	const handleHumanize = async () => {
-		const selectedFileKeys = files
-			.filter((f) => f.selected)
-			.map((f) => f.fileKey);
-
-		if (selectedFileKeys.length === 0) {
-			alert("Please select at least one file");
+		if (!inputText.trim()) {
+			alert("Please enter text to humanize");
 			return;
 		}
 
-		setLoading(true);
-		setProgress(0);
-		setResults([]);
+		const startTime = Date.now();
+		setOutputText("");
+		setCopySuccess(false);
 
 		try {
-			const response = await fetch("/api/humanizer/humanize-batch", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ fileKeys: selectedFileKeys }),
+			// Stage 1: Humanize
+			setProcessingState({
+				stage: "humanizing",
+				progress: 33,
+				message: "Humanizing text...",
 			});
 
-			const data = await response.json();
-			if (data.success) {
-				setJobId(data.jobId);
+			const humanizeResponse = await fetch("/api/humanizer/humanize-text", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ text: inputText }),
+			});
+
+			if (!humanizeResponse.ok) {
+				const errorData = await humanizeResponse.json().catch(() => ({}));
+				const errorMsg = errorData.error || "Humanization failed";
+				throw new Error(errorMsg);
 			}
-		} catch (error) {
-			console.error("Error starting humanization:", error);
-			setLoading(false);
-		}
-	};
 
-	const handleDownload = async (outputFileKey: string) => {
-		try {
-			const url = `/api/files/download?fileKey=${encodeURIComponent(outputFileKey)}`;
-			
-			// Create a temporary anchor element to trigger download
-			const link = document.createElement("a");
-			link.href = url;
-			link.download = outputFileKey.split('/').pop() || 'document.docx';
-			link.style.display = "none";
-			document.body.appendChild(link);
-			link.click();
-			
-			// Clean up after a short delay
-			setTimeout(() => {
-				document.body.removeChild(link);
-			}, 100);
-		} catch (error) {
-			console.error("Error downloading file:", error);
-			alert("Failed to download file. Please try again.");
-		}
-	};
+			const humanizeData = await humanizeResponse.json();
+			let processedText = humanizeData.humanizedText;
 
-	const handleDownloadAll = async () => {
-		if (!results || results.length === 0) return;
-		setDownloadingAll(true);
-		try {
-			// Download files sequentially with delays to avoid browser blocking
-			for (let i = 0; i < results.length; i++) {
-				const result = results[i];
-				const url = `/api/files/download?fileKey=${encodeURIComponent(result.outputFileKey)}`;
-				
-				// Create anchor element for each download
-				const link = document.createElement("a");
-				link.href = url;
-				link.download = result.outputFileKey.split('/').pop() || 'document.docx';
-				link.style.display = "none";
-				document.body.appendChild(link);
-				
-				// Trigger download
-				link.click();
-				
-				// Clean up
-				setTimeout(() => {
-					try {
-						document.body.removeChild(link);
-					} catch (e) {
-						// Ignore cleanup errors
-					}
-				}, 100);
-				
-				// Wait between downloads to avoid browser blocking
-				if (i < results.length - 1) {
-					await new Promise(resolve => setTimeout(resolve, 500));
+			// Stage 2: Grammar & Spell Check
+			setProcessingState({
+				stage: "grammar-check",
+				progress: 66,
+				message: "Checking grammar and spelling...",
+			});
+
+			const grammarResponse = await fetch(
+				"/api/humanizer/grammar-check",
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ text: processedText }),
 				}
+			);
+
+			if (!grammarResponse.ok) {
+				const errorData = await grammarResponse.json().catch(() => ({}));
+				const errorMsg = errorData.error || "Grammar check failed";
+				throw new Error(errorMsg);
 			}
+
+			const grammarData = await grammarResponse.json();
+			processedText = grammarData.correctedText;
+
+			setOutputText(processedText);
+			const endTime = Date.now();
+			setProcessingTime((endTime - startTime) / 1000);
+
+			setProcessingState({
+				stage: "complete",
+				progress: 100,
+				message: "Complete!",
+			});
 		} catch (error) {
-			console.error("Error downloading files:", error);
-			alert("Some files failed to download. Please try downloading individually.");
-		} finally {
-			setDownloadingAll(false);
+			const errorMsg =
+				error instanceof Error ? error.message : "An error occurred";
+			console.error("Processing error:", error);
+			setProcessingState({
+				stage: "error",
+				progress: 0,
+				message: errorMsg,
+			});
+			alert(`Error: ${errorMsg}`);
 		}
 	};
+
+	const handleCopy = () => {
+		if (outputRef.current) {
+			outputRef.current.select();
+			document.execCommand("copy");
+			setCopySuccess(true);
+			setTimeout(() => setCopySuccess(false), 2000);
+		}
+	};
+
+	const handleClearInput = () => {
+		setInputText("");
+		setOutputText("");
+		setProcessingState({ stage: "idle", progress: 0, message: "" });
+		setProcessingTime(0);
+		inputRef.current?.focus();
+	};
+
+	const getStageColor = (stage: string) => {
+		switch (stage) {
+			case "humanizing":
+				return "text-blue-500";
+			case "grammar-check":
+				return "text-purple-500";
+			case "complete":
+				return "text-green-500";
+			case "error":
+				return "text-red-500";
+			default:
+				return "text-slate-400";
+		}
+	};
+
+	const getStageIcon = (stage: string) => {
+		switch (stage) {
+			case "humanizing":
+			case "grammar-check":
+				return <Loader className='w-5 h-5 animate-spin' />;
+			case "complete":
+				return <CheckCircle2 className='w-5 h-5' />;
+			case "error":
+				return <AlertCircle className='w-5 h-5' />;
+			default:
+				return null;
+		}
+	};
+
 
 	return (
-		<div className='space-y-6 p-6 max-w-7xl mx-auto'>
-			<div>
-				<h1 className='text-4xl font-bold mb-2'>Text Humanizer</h1>
-				<p className='text-gray-600'>
-					Convert AI-generated content to more natural, human-like text
-				</p>
-			</div>
-
-			{/* File Selection */}
-			<Card>
-				<CardHeader>
-					<CardTitle>Select Documents to Humanize</CardTitle>
-					<p className='text-sm text-gray-600 mt-2'>
-						Selected: <span className='font-semibold'>{files.filter((f) => f.selected).length}</span> of{" "}
-						<span className='font-semibold'>{files.length}</span> files
+		<div className='min-h-screen bg-gradient-to-br from-[#050910] via-[#0a1020] to-[#0b1224] text-slate-100 p-6'>
+			<div className='max-w-7xl mx-auto space-y-6'>
+				{/* Header */}
+				<div className='space-y-2'>
+					<h1 className='text-5xl font-bold bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent'>
+						AI Text Humanizer
+					</h1>
+					<p className='text-slate-400 text-lg'>
+						Transform AI-generated content into natural, human-like text with intelligent processing
 					</p>
-				</CardHeader>
-				<CardContent className='space-y-4'>
-					{files.length > 0 && (
-						<div className='flex gap-2'>
-							<Button
-								variant='outline'
-								size='sm'
-								onClick={handleSelectAll}
-								disabled={files.every((f) => f.selected)}>
-								Select All
-							</Button>
-							<Button
-								variant='outline'
-								size='sm'
-								onClick={handleClearAll}
-								disabled={files.every((f) => !f.selected)}>
-								Clear All
-							</Button>
-						</div>
-					)}
-					<div className='max-h-64 overflow-y-auto space-y-2 border rounded p-4'>
-						{files.length === 0 ? (
-							<p className='text-gray-500'>No DOCX files found in MinIO</p>
-						) : (
-							files.map((file) => (
-								<label
-									key={file.fileKey}
-									className='flex items-center space-x-2 p-2 hover:bg-gray-100 rounded cursor-pointer'>
-									<input
-										type='checkbox'
-										checked={file.selected}
-										onChange={() => handleFileSelection(file.fileKey)}
-										className='w-4 h-4'
-									/>
-									<span>{file.fileName}</span>
-								</label>
-							))
-						)}
-					</div>
-
-					<Button
-						onClick={handleHumanize}
-						disabled={loading || files.every((f) => !f.selected)}
-						className='w-full'>
-						{loading ? (
-							<>
-								<Loader className='mr-2 w-4 h-4 animate-spin' />
-								Humanizing... {progress}%
-							</>
-						) : (
-							"Start Humanization"
-						)}
-					</Button>
-
-					{loading && <Progress value={progress} className='w-full' />}
-				</CardContent>
-			</Card>
-
-			{/* Results */}
-			{results.length > 0 && (
-				<div className='space-y-4'>
-					<div className='flex items-center justify-between'>
-						<h2 className='text-2xl font-bold'>Humanization Results</h2>
-						<Button
-							variant='default'
-							size='sm'
-							onClick={handleDownloadAll}
-							disabled={downloadingAll || results.length === 0}
-						>
-							<Download className='w-4 h-4 mr-2' />
-							{downloadingAll ? "Downloading..." : "Download All Humanized"}
-						</Button>
-					</div>
-
-					{results.map((result) => (
-						<Card key={result.fileKey}>
-							<CardHeader>
-								<div className='flex items-center justify-between'>
-									<div>
-										<CardTitle className='flex items-center gap-2'>
-											{result.fileName}
-											<CheckCircle className='w-5 h-5 text-green-500' />
-										</CardTitle>
-										<p className='text-sm text-gray-600 mt-2'>
-											Processing time:{" "}
-											{(result.processingTime / 1000).toFixed(2)}s
-										</p>
-									</div>
-								</div>
-							</CardHeader>
-
-							<CardContent className='space-y-4'>
-								{/* Statistics */}
-								<div className='grid grid-cols-3 gap-4'>
-									<div className='p-3 bg-blue-50 rounded'>
-										<p className='text-sm text-gray-600'>Changes Applied</p>
-										<p className='text-2xl font-bold'>
-											{result.changesApplied}
-										</p>
-									</div>
-									<div className='p-3 bg-green-50 rounded'>
-										<p className='text-sm text-gray-600'>Original Length</p>
-										<p className='text-xl font-semibold'>
-											{Math.round(result.originalLength / 1000)}K chars
-										</p>
-									</div>
-									<div className='p-3 bg-purple-50 rounded'>
-										<p className='text-sm text-gray-600'>Humanized Length</p>
-										<p className='text-xl font-semibold'>
-											{Math.round(result.humanizedLength / 1000)}K chars
-										</p>
-									</div>
-								</div>
-
-								{/* Preview Section */}
-								<div className='pt-4'>
-									<DocumentPreview
-										originalFileKey={result.fileKey}
-										humanizedFileKey={result.outputFileKey}
-										fileName={result.fileName}
-									/>
-								</div>
-
-								{/* Stored in MinIO notice */}
-								<div className='mt-2 text-sm text-gray-700'>
-									Saved to MinIO as:
-									<span className='ml-1 font-mono'>
-										{result.outputFileKey}
-									</span>
-								</div>
-							</CardContent>
-						</Card>
-					))}
 				</div>
-			)}
 
-			{/* No Results Alert */}
-			{!loading && results.length === 0 && files.length > 0 && (
-				<Alert>
-					<AlertCircle className='h-4 w-4' />
-					<AlertDescription>
-						Select files and click "Start Humanization" to process your
-						documents
-					</AlertDescription>
-				</Alert>
-			)}
+				{/* Main Content */}
+				<div className='grid grid-cols-1 lg:grid-cols-2 gap-6'>
+					{/* Input Section */}
+					<Card className='bg-[#0b0f1a]/50 border border-white/10 backdrop-blur-sm shadow-xl'>
+						<CardContent className='p-6 space-y-4'>
+							<div className='space-y-2'>
+								<h2 className='text-lg font-semibold text-slate-100'>
+									Original Text
+								</h2>
+								<p className='text-sm text-slate-400'>
+									Paste your AI-generated content here
+								</p>
+							</div>
+
+							<textarea
+								ref={inputRef}
+								value={inputText}
+								onChange={(e) => setInputText(e.target.value)}
+								placeholder='Paste your text here... (minimum 50 characters recommended)'
+								className='w-full h-96 p-4 rounded-lg bg-[#05070d] border border-white/10 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none'
+								disabled={processingState.stage !== "idle"}
+							/>
+
+							<div className='flex items-center justify-between text-sm text-slate-400'>
+								<span>
+									{inputText.length} characters
+								</span>
+								<span>
+									~{Math.ceil(inputText.split(/\s+/).length / 200)} min read
+								</span>
+							</div>
+
+							<div className='flex gap-2'>
+								<Button
+									onClick={handleHumanize}
+									disabled={
+										processingState.stage !== "idle" || !inputText.trim()
+									}
+									className='flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-indigo-900/30'
+								>
+									{processingState.stage === "idle" ? (
+										"Humanize Now"
+									) : (
+										<>
+											<Loader className='w-4 h-4 mr-2 animate-spin' />
+											Processing...
+										</>
+									)}
+								</Button>
+								<Button
+									onClick={handleClearInput}
+									variant='outline'
+									className='border-white/15 hover:bg-white/5 text-slate-300'
+								>
+									Clear
+								</Button>
+							</div>
+						</CardContent>
+					</Card>
+
+					{/* Output Section */}
+					<Card className='bg-[#0b0f1a]/50 border border-white/10 backdrop-blur-sm shadow-xl'>
+						<CardContent className='p-6 space-y-4'>
+							<div className='space-y-2'>
+								<h2 className='text-lg font-semibold text-slate-100'>
+									Humanized Text
+								</h2>
+								<p className='text-sm text-slate-400'>
+									Your processed content appears here
+								</p>
+							</div>
+
+							{/* Processing Status */}
+							{processingState.stage !== "idle" && (
+								<div className={`flex items-center gap-3 p-3 rounded-lg bg-white/5 border border-white/10 ${getStageColor(processingState.stage)}`}>
+									{getStageIcon(processingState.stage)}
+									<div className='flex-1'>
+										<p className='text-sm font-medium'>
+											{processingState.message}
+										</p>
+										{processingState.stage !== "complete" &&
+											processingState.stage !== "error" && (
+												<div className='w-full bg-white/5 rounded-full h-1 mt-2'>
+													<div
+														className='h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-300'
+														style={{
+															width: `${processingState.progress}%`,
+														}}
+													/>
+												</div>
+											)}
+									</div>
+								</div>
+							)}
+
+							<textarea
+								ref={outputRef}
+								value={outputText}
+								readOnly
+								placeholder='Humanized text will appear here...'
+								className='w-full h-96 p-4 rounded-lg bg-[#05070d] border border-white/10 text-slate-100 placeholder-slate-500 focus:outline-none resize-none'
+							/>
+
+							{outputText && (
+								<div className='flex items-center justify-between text-sm text-slate-400'>
+									<span>
+										{outputText.length} characters
+									</span>
+									{processingTime > 0 && (
+										<span>
+											Processed in {processingTime.toFixed(2)}s
+										</span>
+									)}
+								</div>
+							)}
+
+							{outputText && (
+								<Button
+									onClick={handleCopy}
+									className='w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-lg shadow-purple-900/30'
+								>
+									<Copy className='w-4 h-4 mr-2' />
+									{copySuccess ? "Copied to Clipboard!" : "Copy Humanized Text"}
+								</Button>
+							)}
+						</CardContent>
+					</Card>
+				</div>
+
+				{/* Info Cards */}
+				<div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
+					<Card className='bg-[#0b0f1a]/50 border border-white/10 backdrop-blur-sm'>
+						<CardContent className='p-4 space-y-2'>
+							<div className='w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center'>
+								<span className='text-blue-400 text-lg'>✨</span>
+							</div>
+							<h3 className='font-semibold text-slate-100'>Smart Humanization</h3>
+							<p className='text-sm text-slate-400'>
+								Advanced algorithms transform robotic text into natural language
+							</p>
+						</CardContent>
+					</Card>
+
+					<Card className='bg-[#0b0f1a]/50 border border-white/10 backdrop-blur-sm'>
+						<CardContent className='p-4 space-y-2'>
+							<div className='w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center'>
+								<span className='text-purple-400 text-lg'>✓</span>
+							</div>
+							<h3 className='font-semibold text-slate-100'>Grammar Check</h3>
+							<p className='text-sm text-slate-400'>
+								Automatic spell and grammar correction for polished output
+							</p>
+						</CardContent>
+					</Card>
+
+					<Card className='bg-[#0b0f1a]/50 border border-white/10 backdrop-blur-sm'>
+						<CardContent className='p-4 space-y-2'>
+							<div className='w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center'>
+								<span className='text-indigo-400 text-lg'>⚡</span>
+							</div>
+							<h3 className='font-semibold text-slate-100'>Lightning Fast</h3>
+							<p className='text-sm text-slate-400'>
+								Get results in seconds with our optimized pipeline
+							</p>
+						</CardContent>
+					</Card>
+				</div>
+			</div>
 		</div>
 	);
 }
