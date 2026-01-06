@@ -47,10 +47,10 @@ try:
     import spell_grammar_checker
     sys.path.pop(0)
     
-    # === DOCUMENT FORMATTER ===
-    sys.path.insert(0, FORMATTER_MODULE)
-    import formatter
-    sys.path.pop(0)
+    # === DOCUMENT FORMATTER === (DISABLED - preserves original formatting)
+    # sys.path.insert(0, FORMATTER_MODULE)
+    # import formatter
+    # sys.path.pop(0)
     
     # === REDUCTOR MODULE ===
     sys.path.insert(0, REDUCTOR_MODULE)
@@ -170,19 +170,19 @@ def process_single_file(args):
             print(f"Spell/grammar check failed: {e}")
             shutil.copy(humanized_path, final_path)
 
-        # Formatting
-        print("Applying standard formatting...")
-        formatted_path = os.path.join(worker_dir, "formatted_" + os.path.basename(docx_path))
-        try:
-            format_stats = formatter.format_docx_via_onlyoffice(final_path, formatted_path)
-            print(f"  Formatting status: {format_stats['status']}")
-            print(f"  Processing time: {format_stats['processing_time_ms']}ms")
-            if not is_valid_docx(formatted_path):
-                print(f"[ERROR] Formatter produced a corrupted DOCX: {formatted_path}")
-                shutil.copy(final_path, formatted_path)
-        except Exception as e:
-            print(f"Formatting failed: {e}")
-            shutil.copy(final_path, formatted_path)
+        # Formatting (DISABLED - preserves original formatting)
+        # print("Applying standard formatting...")
+        formatted_path = final_path  # Skip formatting, use spell-checked file directly
+        # try:
+        #     format_stats = formatter.format_docx_via_onlyoffice(final_path, formatted_path)
+        #     print(f"  Formatting status: {format_stats['status']}")
+        #     print(f"  Processing time: {format_stats['processing_time_ms']}ms")
+        #     if not is_valid_docx(formatted_path):
+        #         print(f"[ERROR] Formatter produced a corrupted DOCX: {formatted_path}")
+        #         shutil.copy(final_path, formatted_path)
+        # except Exception as e:
+        #     print(f"Formatting failed: {e}")
+        #     shutil.copy(final_path, formatted_path)
 
         elapsed = time.perf_counter() - started
         print(f"[TIMER] {filename} done in {elapsed:.2f}s")

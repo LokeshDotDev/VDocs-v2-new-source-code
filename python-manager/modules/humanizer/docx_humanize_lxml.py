@@ -25,15 +25,17 @@ NSMAP = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
 HUMANIZER_URL = os.environ.get("HUMANIZER_URL", "http://localhost:8000/humanize")
 
 # Tuning knobs (env-driven) for aggressiveness and safety guards
-# MAX HUMANIZATION with fewer awkward fillers (reduced transitions)
-AGGRESSIVE = os.environ.get("HUMANIZER_AGGRESSIVE", "1") in ("1", "true", "True")
-HIGH_P_SYN = float(os.environ.get("HUMANIZER_P_SYN_HIGH", "0.92"))  # keep synonym strength high
-HIGH_P_TRANS = float(os.environ.get("HUMANIZER_P_TRANS_HIGH", "0.38"))  # lower transition insertions to avoid "In fact"/"Consequently"
-MID_P_SYN = float(os.environ.get("HUMANIZER_P_SYN_LOW", "0.78"))
-MID_P_TRANS = float(os.environ.get("HUMANIZER_P_TRANS_LOW", "0.28"))
-MAX_LEN_DELTA = float(os.environ.get("HUMANIZER_MAX_LEN_DELTA", "0.40"))
-SIMILARITY_MAX = float(os.environ.get("HUMANIZER_SIMILARITY_MAX", "0.58"))  # still forces strong change but slightly relaxed
-MAX_ATTEMPTS = int(os.environ.get("HUMANIZER_ATTEMPTS", "12"))
+# MODERATE HUMANIZATION - target ~30% AI detection with controlled drift
+# Goal: Add variation without wrecking grammar (picky grammar will clean up)
+BYPASS = os.environ.get("HUMANIZER_BYPASS", "0") in ("1", "true", "True")  # default OFF - humanizer will run
+AGGRESSIVE = os.environ.get("HUMANIZER_AGGRESSIVE", "1") in ("1", "true", "True")  # default ON for stronger paraphrase
+HIGH_P_SYN = float(os.environ.get("HUMANIZER_P_SYN_HIGH", "0.18"))  # moderate synonym replacement
+HIGH_P_TRANS = float(os.environ.get("HUMANIZER_P_TRANS_HIGH", "0.08"))  # some transitions
+MID_P_SYN = float(os.environ.get("HUMANIZER_P_SYN_LOW", "0.12"))   # light
+MID_P_TRANS = float(os.environ.get("HUMANIZER_P_TRANS_LOW", "0.05"))  # light transitions
+MAX_LEN_DELTA = float(os.environ.get("HUMANIZER_MAX_LEN_DELTA", "0.15"))  # allow 15% length variation
+SIMILARITY_MAX = float(os.environ.get("HUMANIZER_SIMILARITY_MAX", "0.75"))  # allow noticeable change
+MAX_ATTEMPTS = int(os.environ.get("HUMANIZER_ATTEMPTS", "6"))  # moderate attempts
 
 
 def _post_json(url: str, payload: dict, timeout: int = 60) -> dict:
@@ -114,6 +116,9 @@ def _should_humanize_text_node(text_node: etree._Element) -> bool:
     p = _ancestor_paragraph(text_node)
     if p is None:
         return False
+    # Global bypass to minimize AI detection; default on
+    if BYPASS:
+        return False
     # Skip headings
     if _is_heading_paragraph(p):
         return False
@@ -124,7 +129,7 @@ def _should_humanize_text_node(text_node: etree._Element) -> bool:
     # Always allow list items; else require decent length
     if _is_list_paragraph(p):
         return True
-    return len((text or "").strip()) >= 15  # Reduced from 30 to 15 for more coverage
+    return len((text or "").strip()) >= 30  # humanize paragraphs with 30+ chars
 
 
 def _humanize_text_node(text_node: etree._Element) -> None:
@@ -225,6 +230,9 @@ def _humanize_text_node(text_node: etree._Element) -> None:
                 break  # Found good candidate, stop trying
 
         if best and best.strip():
+            # Final guard: if rewrite drifts too far (<0.72 similarity), keep original
+            if difflib.SequenceMatcher(a=stripped, b=best).ratio() < 0.72:
+                return
             best = _apply_casing_like(stripped, best)
             best = _preserve_whitespace_shell(original_text, best)
             text_node.text = best
