@@ -25,6 +25,11 @@ app.use(cors({
 // Ensure storage directory exists
 fs.mkdirSync(config.storageDir, { recursive: true });
 
+// Health endpoint - MUST be before TUS handler
+app.get("/health", (_req, res) => {
+	res.json({ status: "ok" });
+});
+
 // TUS endpoint
 app.all(`${config.tusPath}*`, async (req, res) => {
 	try {
@@ -43,11 +48,6 @@ app.all(`${config.tusPath}*`, async (req, res) => {
 			});
 		}
 	}
-});
-
-// Health endpoint
-app.get("/health", (_req, res) => {
-	res.json({ status: "ok" });
 });
 
 // MinIO health endpoint

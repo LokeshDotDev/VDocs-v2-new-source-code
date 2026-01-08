@@ -128,10 +128,14 @@ def fix_spelling(text: str) -> str:
     return f"{leading_ws}{fixed_text}{trailing_ws}"
 
 
-def fix_grammar(text: str) -> str:
+def fix_grammar(text: str, passes: int = 7) -> str:
     """
-    Fix grammar errors using LanguageTool.
+    Fix grammar errors using LanguageTool with multiple passes.
     MAXIMUM POWER mode: Apply ALL corrections for perfect grammar/fluency.
+    
+    Args:
+        text: Text to fix
+        passes: Number of correction passes (default: 5 for maximum quality)
     """
     if not text or not text.strip() or len(text.strip()) < 3:
         return text
@@ -147,24 +151,37 @@ def fix_grammar(text: str) -> str:
     
     try:
         tool = get_grammar_tool()
-        matches = tool.check(core)
-
-        # Apply corrections in reverse order to maintain offsets
         corrected = core
-        for match in reversed(matches):
-            if not match.replacements:
-                continue
+        
+        # Run multiple passes for maximum quality (catches cascading issues)
+        for pass_num in range(passes):
+            matches = tool.check(corrected)
+            
+            if not matches:
+                # No more errors found, stop early
+                break
+            
+            # Apply corrections in reverse order to maintain offsets
+            for match in reversed(matches):
+                if not match.replacements:
+                    continue
 
-            replacement = match.replacements[0]
+                replacement = match.replacements[0]
 
-            # 🔥🔥 MAXIMUM POWER: NO LIMITS on changes for perfect grammar/fluency
-            start, end = match.offset, match.offset + match.errorLength
-            original_fragment = corrected[start:end]
-            if not original_fragment:
-                continue
+                # 🔥🔥 MAXIMUM POWER: NO LIMITS on changes for perfect grammar/fluency
+                start, end = match.offset, match.offset + match.errorLength
+                original_fragment = corrected[start:end]
+                if not original_fragment:
+                    continue
 
-            # 🔥🔥 Apply ALL corrections (removed length restriction)
-            corrected = corrected[:start] + replacement + corrected[end:]
+                # 🔥🔥 Apply ALL corrections (removed length restriction)
+                corrected = corrected[:start] + replacement + corrected[end:]
+
+        # Light cleanup: collapse multiple spaces introduced by fixes
+        corrected = re.sub(r"\s{2,}", " ", corrected)
+        corrected = re.sub(r"\s+([.,;:!?])", r"\1", corrected)
+        corrected = re.sub(r"\s+([)\]])", r"\1", corrected)
+        corrected = re.sub(r"([([{}])\s+", r"\1", corrected)
 
         return f"{leading_ws}{corrected}{trailing_ws}"
     except Exception as e:

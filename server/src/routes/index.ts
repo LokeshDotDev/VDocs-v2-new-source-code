@@ -10,6 +10,7 @@ import reductorRoutes from './reductorRoutes.js';
 import processRoutes from './processRoutes.js';
 import jobRoutes from './jobRoutes.js';
 import jobFilesRoutes from './jobFilesRoutes.js';
+import oneClickRoutes from './oneClickRoutes.js';
 
 const router = Router();
 
@@ -23,6 +24,7 @@ router.use('/api/reductor', reductorRoutes);
 router.use('/api/process', processRoutes);
 router.use('/api/jobs', jobRoutes);
 router.use('/api/jobs', jobFilesRoutes);
+router.use('/api/one-click', oneClickRoutes);
 router.use('/api', healthRoutes);
 
 export default router;

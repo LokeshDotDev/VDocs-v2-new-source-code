@@ -8,8 +8,13 @@ import os
 import shutil
 from config import config
 from logger import get_logger
+from modules.ai_detector.binoculars_detector import BinocularsDetector
+from docx import Document
 
 logger = get_logger(__name__)
+
+# Initialize Binoculars detector (connects to remote VPS)
+binoculars_detector = BinocularsDetector()
 
 app = FastAPI(
     title=config.APP_NAME,
@@ -43,6 +48,9 @@ class AnonymizeDocxRequest(BaseModel):
     input_file_path: str
     output_file_path: str
 
+class ExtractTextRequest(BaseModel):
+    file_path: str
+
 # Routes
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
@@ -64,6 +72,43 @@ async def health_check():
         "version": config.APP_VERSION,
         "services": service_health,
     }
+
+@app.post("/extract-text")
+async def extract_text(request: ExtractTextRequest) -> Dict[str, Any]:
+    """
+    Extract text from a DOCX or TXT file.
+    Expects: { "file_path": "/path/to/file.docx" }
+    Returns: { "text": "extracted text content" }
+    """
+    try:
+        file_path = request.file_path
+        
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
+        
+        # Extract text based on file type
+        if file_path.endswith('.docx'):
+            logger.info(f"📄 Extracting text from DOCX: {file_path}")
+            doc = Document(file_path)
+            text = "\n".join([paragraph.text for paragraph in doc.paragraphs])
+        elif file_path.endswith('.txt'):
+            logger.info(f"📄 Extracting text from TXT: {file_path}")
+            with open(file_path, 'r', encoding='utf-8') as f:
+                text = f.read()
+        else:
+            # Fallback: read as plain text
+            logger.info(f"📄 Reading file as plain text: {file_path}")
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                text = f.read()
+        
+        logger.info(f"✅ Extracted {len(text)} characters from {file_path}")
+        return {"text": text}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Text extraction error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/reductor/anonymize-text")
 async def reductor_anonymize_text(request: AnonymizeTextRequest, version: Optional[str] = None) -> Dict[str, Any]:
@@ -401,6 +446,31 @@ async def humanize_docx(request: DocxHumanizeRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/ai-detector/detect-binoculars")
+async def detect_ai_binoculars(request: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Detect if text is AI-generated using Binoculars (remote VPS).
+    Expects: { "text": "some text" }
+    Returns: { "score": float, "is_ai_generated": boolean }
+    """
+    try:
+        text = request.get("text", "")
+        if not text:
+            raise HTTPException(status_code=400, detail="text field is required")
+        
+        logger.info(f"🔍 Running Binoculars AI detection on {len(text)} characters")
+        result = binoculars_detector.detect(text)
+        
+        logger.info(f"✅ Binoculars detection complete: score={result['score']}, is_ai={result['is_ai_generated']}")
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Binoculars detection error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/")
 async def root():
     """Root endpoint."""
@@ -411,10 +481,12 @@ async def root():
         "registered_services": list(config.SERVICES.keys()),
         "endpoints": {
             "health": "/health",
+            "extract-text": "/extract-text",
             "convert/pdf-to-html": "/convert/pdf-to-html",
             "convert/pdf-to-html-direct": "/convert/pdf-to-html-direct",
             "ai-detection/detect": "/ai-detection/detect",
             "ai-detection/batch-detect": "/ai-detection/batch-detect",
+            "ai-detector/detect-binoculars": "/ai-detector/detect-binoculars",
             "humanizer/humanize": "/humanizer/humanize",
             "humanizer/humanize-docx": "/humanizer/humanize-docx",
         },

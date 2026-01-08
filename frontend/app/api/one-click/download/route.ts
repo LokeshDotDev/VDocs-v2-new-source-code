@@ -9,7 +9,8 @@ export async function GET(request: NextRequest) {
 	}
 
 	const bucket = process.env.MINIO_BUCKET || "wedocs";
-	const objectKey = `jobs/${jobId}/result.zip`;
+	// The batch processing creates ZIP at: jobs/{jobId}/exports/{jobId}-export.zip
+	const objectKey = `jobs/${jobId}/exports/${jobId}-export.zip`;
 
 	try {
 		// Ensure the object exists before issuing a signed URL
@@ -18,6 +19,6 @@ export async function GET(request: NextRequest) {
 		return NextResponse.redirect(url);
 	} catch (error) {
 		console.error("Download error:", error);
-		return NextResponse.json({ error: "Result not ready" }, { status: 404 });
+		return NextResponse.json({ error: "Result not ready - zip file not found. Processing may still be in progress." }, { status: 404 });
 	}
 }

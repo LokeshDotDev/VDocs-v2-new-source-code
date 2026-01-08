@@ -33,7 +33,7 @@ interface BatchDetectionJob {
 }
 
 const PYTHON_MANAGER_URL = process.env['PYTHON_MANAGER_URL'] || 'http://localhost:5000';
-const BINOCULARS_THRESHOLD = 0.7; // AI detection threshold
+const BINOCULARS_THRESHOLD = 0.25; // AI detection threshold (more aggressive routing to humanizer)
 const CHUNK_SIZE = 100; // characters per chunk to avoid timeouts
 
 class AIDetectionService {

@@ -42,8 +42,8 @@ app = FastAPI(
 
 class HumanizeRequest(BaseModel):
     text: str = Field(..., description="The input text to humanize. Must be non-empty.")
-    p_syn: Optional[float] = Field(0.95, ge=0.0, le=1.0, description="Synonym replacement intensity (0.0-1.0)")  # 🔥🔥 ABSOLUTE MAXIMUM
-    p_trans: Optional[float] = Field(0.70, ge=0.0, le=1.0, description="Academic transition insertion probability (0.0-1.0)")  # 🔥🔥 ABSOLUTE MAXIMUM
+    p_syn: Optional[float] = Field(1.0, ge=0.0, le=1.0, description="Synonym replacement intensity (0.0-1.0)")
+    p_trans: Optional[float] = Field(0.5, ge=0.0, le=1.0, description="Academic transition insertion probability (0.0-1.0)")
     preserve_linebreaks: Optional[bool] = Field(True, description="Whether to preserve original line breaks")
 
     class Config:

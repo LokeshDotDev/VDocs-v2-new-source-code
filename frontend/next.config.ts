@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
-// Default backend to local API server on 3000; override with BACKEND_URL when set.
-const API_BASE = process.env.BACKEND_URL || "http://localhost:3000";
+// Use NEXT_PUBLIC_API_URL from .env.local or fallback to localhost:4000
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 const nextConfig: NextConfig = {
 	// Ensure CKEditor packages are transpiled correctly for Next/Turbopack

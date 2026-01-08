@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { v4 as uuidv4 } from "uuid";
-import { setJobStatus, getJobStatus } from "@/lib/one-click-store";
+import { setJobStatus } from "@/lib/one-click-store";
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 export async function POST(request: NextRequest) {
 	try {
@@ -11,19 +12,24 @@ export async function POST(request: NextRequest) {
 			return NextResponse.json({ error: "fileCount is required" }, { status: 400 });
 		}
 
-		const jobId = uuidv4();
-		const uploadUrl = "http://localhost:4000/files";
+		// Call the backend to create the job
+		const backendRes = await fetch(`${BACKEND_URL}/api/one-click/upload`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ fileCount, folderStructure }),
+		});
+
+		if (!backendRes.ok) {
+			const error = await backendRes.json();
+			console.error("❌ Backend error:", error);
+			return NextResponse.json(error, { status: backendRes.status });
+		}
+
+		const { jobId, uploadUrl, metadata } = await backendRes.json();
 
 		console.log("✅ Multi-file upload initialized:", { jobId, fileCount, folders: folderStructure?.length || 0 });
 
-		// TUS metadata - all values must be strings
-		const metadata = {
-			jobId: jobId,
-			stage: "raw",
-			userId: "u_default",
-		};
-
-		// Prime in-memory status
+		// Prime in-memory status (for polling on frontend)
 		setJobStatus(jobId, {
 			stage: "upload",
 			progress: 0,
