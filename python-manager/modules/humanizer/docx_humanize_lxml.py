@@ -25,17 +25,17 @@ NSMAP = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
 HUMANIZER_URL = os.environ.get("HUMANIZER_URL", "http://localhost:8000/humanize")
 
 # Tuning knobs (env-driven) for aggressiveness and safety guards
-# MODERATE HUMANIZATION - target ~30% AI detection with controlled drift
-# Goal: Add variation without wrecking grammar (picky grammar will clean up)
+# MAXIMUM HUMANIZATION - target ~30% AI detection with aggressive transformation
+# Goal: Heavily rephrase while maintaining factual accuracy
 BYPASS = os.environ.get("HUMANIZER_BYPASS", "0") in ("1", "true", "True")  # default OFF - humanizer will run
-AGGRESSIVE = os.environ.get("HUMANIZER_AGGRESSIVE", "1") in ("1", "true", "True")  # default ON for stronger paraphrase
-HIGH_P_SYN = float(os.environ.get("HUMANIZER_P_SYN_HIGH", "0.18"))  # moderate synonym replacement
-HIGH_P_TRANS = float(os.environ.get("HUMANIZER_P_TRANS_HIGH", "0.08"))  # some transitions
-MID_P_SYN = float(os.environ.get("HUMANIZER_P_SYN_LOW", "0.12"))   # light
-MID_P_TRANS = float(os.environ.get("HUMANIZER_P_TRANS_LOW", "0.05"))  # light transitions
-MAX_LEN_DELTA = float(os.environ.get("HUMANIZER_MAX_LEN_DELTA", "0.15"))  # allow 15% length variation
-SIMILARITY_MAX = float(os.environ.get("HUMANIZER_SIMILARITY_MAX", "0.75"))  # allow noticeable change
-MAX_ATTEMPTS = int(os.environ.get("HUMANIZER_ATTEMPTS", "6"))  # moderate attempts
+AGGRESSIVE = os.environ.get("HUMANIZER_AGGRESSIVE", "1") in ("1", "true", "True")  # default ON for strongest paraphrase
+HIGH_P_SYN = float(os.environ.get("HUMANIZER_P_SYN_HIGH", "0.88"))  # very aggressive synonym replacement
+HIGH_P_TRANS = float(os.environ.get("HUMANIZER_P_TRANS_HIGH", "0.60"))  # aggressive transitions
+MID_P_SYN = float(os.environ.get("HUMANIZER_P_SYN_LOW", "0.65"))   # moderate-high
+MID_P_TRANS = float(os.environ.get("HUMANIZER_P_TRANS_LOW", "0.45"))  # moderate transitions
+MAX_LEN_DELTA = float(os.environ.get("HUMANIZER_MAX_LEN_DELTA", "0.80"))  # allow 80% length variation
+SIMILARITY_MAX = float(os.environ.get("HUMANIZER_SIMILARITY_MAX", "0.70"))  # allow strong transformation but keep coherence window
+MAX_ATTEMPTS = int(os.environ.get("HUMANIZER_ATTEMPTS", "30"))  # more attempts for best result
 
 
 def _post_json(url: str, payload: dict, timeout: int = 60) -> dict:
@@ -230,8 +230,8 @@ def _humanize_text_node(text_node: etree._Element) -> None:
                 break  # Found good candidate, stop trying
 
         if best and best.strip():
-            # Final guard: if rewrite drifts too far (<0.72 similarity), keep original
-            if difflib.SequenceMatcher(a=stripped, b=best).ratio() < 0.72:
+            # Final guard: allow stronger paraphrase but keep coherence
+            if difflib.SequenceMatcher(a=stripped, b=best).ratio() < 0.55:
                 return
             best = _apply_casing_like(stripped, best)
             best = _preserve_whitespace_shell(original_text, best)

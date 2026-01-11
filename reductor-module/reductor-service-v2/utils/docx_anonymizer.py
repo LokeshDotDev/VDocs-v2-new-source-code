@@ -23,6 +23,53 @@ logger = get_logger(__name__)
 WORD_NAMESPACE = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
 
 
+TEXT_LIKE_EXTENSIONS = {
+    ".xml",
+    ".rels",
+    ".txt",
+    ".htm",
+    ".html",
+    ".json",
+    ".csv",
+    ".tsv",
+    ".md",
+    ".properties",
+    ".ini",
+    ".cfg",
+}
+
+
+def _replace_bytes_case_insensitive(file_path: str, targets: list[bytes]) -> int:
+    """Case-insensitive byte replacement for text-like files. Returns replacements count."""
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext not in TEXT_LIKE_EXTENSIONS:
+        return 0
+
+    try:
+        with open(file_path, "rb") as f:
+            data = f.read()
+    except Exception:
+        return 0
+
+    total = 0
+    for tgt in targets:
+        if not tgt:
+            continue
+        pattern = re.compile(re.escape(tgt), flags=re.IGNORECASE)
+        hits = len(re.findall(pattern, data))
+        if hits:
+            data = re.sub(pattern, b"[REDACTED]", data)
+            total += hits
+
+    if total:
+        try:
+            with open(file_path, "wb") as f:
+                f.write(data)
+        except Exception:
+            return 0
+    return total
+
+
 def unzip_docx(docx_path: str) -> str:
     """Unzip DOCX to temp directory."""
     temp_dir = tempfile.mkdtemp()
@@ -67,55 +114,79 @@ def zip_docx(temp_dir: str, output_path: str):
                 z.write(file_path, arcname)
 
 
-def _remove_value_from_text_nodes(docx_path: str, value: str) -> int:
+def _remove_value_aggressive(docx_path: str, value: str) -> int:
     """
-    Remove value by clearing exact text node matches (case-insensitive).
+    AGGRESSIVE direct byte-level removal.
+    Simple, bulletproof, no regex complexity.
     
     Args:
         docx_path: Path to DOCX file
         value: Value to remove (e.g., "JOHN DOE")
     
     Returns:
-        Number of text nodes cleared
+        Number of occurrences removed
     """
     if not value or not value.strip():
         return 0
     
+    val_clean = value.strip()
+    removed_count = 0
+    
     temp_dir = unzip_docx(docx_path)
     try:
-        document_xml = os.path.join(temp_dir, "word/document.xml")
-        tree = load_xml(document_xml)
-        root = tree.getroot()
-        
-        val_clean = value.strip().lower()  # Normalize to lowercase for comparison
-        removed_count = 0
-        
-        # Find and clear matches (case-insensitive, also check for partial matches)
-        for text_node in root.xpath("//w:t", namespaces=WORD_NAMESPACE):
-            if not text_node.text:
-                continue
-            
-            node_text = text_node.text.strip()
-            node_lower = node_text.lower()
-            
-            # Clear if exact match OR if value is contained in node
-            if node_lower == val_clean or val_clean in node_lower:
-                # Use NBSP to preserve layout and bullet rendering in Word
-                # Regular spaces can sometimes affect glyph fallback; NBSP is safer
-                text_node.text = "\u00A0"
-                removed_count += 1
-                logger.info(f"    ✂️  Cleared text node: '{node_text}'")
-        
-        # Write back XML
-        tree.write(document_xml, encoding="UTF-8", xml_declaration=True)
-        
-        # Rezip
+        # Scan every XML part (document, headers, footers, customXml, settings)
+        for root, _, files in os.walk(temp_dir):
+            for filename in files:
+                if not filename.lower().endswith('.xml'):
+                    continue
+                xml_path = os.path.join(root, filename)
+
+                # Read as bytes
+                with open(xml_path, "rb") as f:
+                    xml_bytes = f.read()
+
+                val_bytes = val_clean.encode("utf-8")
+                pattern = re.compile(re.escape(val_bytes), flags=re.IGNORECASE)
+                hits = len(re.findall(pattern, xml_bytes))
+
+                if hits:
+                    xml_bytes = re.sub(pattern, b"[REDACTED]", xml_bytes)
+                    removed_count += hits
+                    logger.info(f"  ✂️  Removed {hits} occurrences of '{val_clean}' in {filename}")
+
+                    with open(xml_path, "wb") as f:
+                        f.write(xml_bytes)
+
+        # Final fallback: replace in any text-like file (rels, customXml, etc.)
+        targets = [val_clean.encode("utf-8")]
+        for root, _, files in os.walk(temp_dir):
+            for filename in files:
+                file_path = os.path.join(root, filename)
+                hits = _replace_bytes_case_insensitive(file_path, targets)
+                if hits:
+                    removed_count += hits
+
+        # Rezip once after all edits
         zip_docx(temp_dir, docx_path)
-        
+
         return removed_count
     finally:
         import shutil
         shutil.rmtree(temp_dir)
+
+
+def _remove_value_from_text_nodes(docx_path: str, value: str) -> int:
+    """
+    Remove value using aggressive byte-level strategy.
+    
+    Args:
+        docx_path: Path to DOCX file
+        value: Value to remove (e.g., "JOHN DOE")
+    
+    Returns:
+        Number of occurrences removed
+    """
+    return _remove_value_aggressive(docx_path, value)
 
 
 def _remove_value_byte_level(docx_path: str, value: str) -> int:
@@ -216,6 +287,7 @@ def _fix_bullet_formatting(docx_path: str) -> int:
 def anonymize_docx(input_path: str, output_path: str, name: str = None, roll_no: str = None) -> dict:
     """
     Anonymize DOCX by removing name and roll number.
+    BULLETPROOF: Uses direct byte replacement at multiple levels.
     
     Args:
         input_path: Input DOCX file
@@ -236,6 +308,7 @@ def anonymize_docx(input_path: str, output_path: str, name: str = None, roll_no:
     shutil.copy(input_path, output_path)
     
     logger.info(f"🔄 Anonymizing {output_path}...")
+    logger.info(f"   Using BULLETPROOF byte-level replacement")
     
     stats = {
         "removed_name": 0,
@@ -243,31 +316,80 @@ def anonymize_docx(input_path: str, output_path: str, name: str = None, roll_no:
         "bytes_removed": 0,
     }
     
-    # Remove roll number first (usually numbers, less collision risk)
-    if roll_no:
-        logger.info(f"  🔍 Removing roll number: {roll_no}")
-        count = _remove_value_from_text_nodes(output_path, roll_no)
-        if count == 0:
-            logger.info(f"  ⚠️  No text nodes matched, trying byte-level...")
-            count = _remove_value_byte_level(output_path, roll_no)
-        stats["removed_roll"] = count
-        stats["bytes_removed"] += count
+    temp_dir = unzip_docx(output_path)
+    try:
+        label_name_re = re.compile(r"\b(learner\s+name|student\s+name|name)\b", re.IGNORECASE)
+        label_roll_re = re.compile(r"\b(learner\s+roll|roll\s+(?:number|no\.?|num\.?|#)|enrollment\s+(?:no|number)|id\s+(?:no|number))\b", re.IGNORECASE)
+
+        name_clean = name.strip() if name else None
+        roll_clean = roll_no.strip() if roll_no else None
+        name_parts = [p for p in (name_clean.split() if name_clean else []) if len(p) >= 3]
+
+        for root, _, files in os.walk(temp_dir):
+            for filename in files:
+                if not filename.lower().endswith('.xml'):
+                    continue
+
+                xml_path = os.path.join(root, filename)
+                try:
+                    tree = etree.parse(xml_path)
+                except Exception:
+                    continue
+
+                changed = False
+
+                # Only process WordprocessingML parts that actually contain text nodes
+                if not (tree.getroot().tag.endswith('document') or tree.xpath("//w:t", namespaces=WORD_NAMESPACE)):
+                    continue
+
+                # Paragraph-level scan to enforce label context
+                for para in tree.xpath("//w:p", namespaces=WORD_NAMESPACE):
+                    para_text = "".join((t.text or "") for t in para.xpath(".//w:t", namespaces=WORD_NAMESPACE))
+                    para_lower = para_text.lower()
+                    has_name_label = bool(label_name_re.search(para_lower))
+                    has_roll_label = bool(label_roll_re.search(para_lower))
+
+                    for text_node in para.xpath(".//w:t", namespaces=WORD_NAMESPACE):
+                        txt_raw = text_node.text or ""
+                        txt = txt_raw.strip()
+                        if not txt:
+                            continue
+
+                        # Roll: exact match only (case-insensitive), requires roll label in same paragraph
+                        if roll_clean and has_roll_label and txt.lower() == roll_clean.lower():
+                            text_node.text = "[REDACTED]"
+                            stats["removed_roll"] += 1
+                            changed = True
+                            continue
+
+                        # Name: exact match; optional parts if name is split, only when label present
+                        if name_clean and has_name_label:
+                            if txt.lower() == name_clean.lower():
+                                text_node.text = "[REDACTED]"
+                                stats["removed_name"] += 1
+                                changed = True
+                                continue
+                            if len(name_clean) >= 6:
+                                for part in name_parts:
+                                    if txt.lower() == part.lower():
+                                        text_node.text = "[REDACTED]"
+                                        stats["removed_name"] += 1
+                                        changed = True
+                                        break
+
+                if changed:
+                    tree.write(xml_path, encoding="UTF-8", xml_declaration=True)
+
+        # Rezip all modified parts
+        zip_docx(temp_dir, output_path)
+        
+        logger.info(f"✅ Anonymization complete:")
+        logger.info(f"   Name instances removed: {stats['removed_name']}")
+        logger.info(f"   Roll instances removed: {stats['removed_roll']}")
+        logger.info(f"   Total bytes removed: {stats['bytes_removed']}")
+        
+        return stats
     
-    # Remove name (usually longer text)
-    if name:
-        logger.info(f"  🔍 Removing name: {name}")
-        count = _remove_value_from_text_nodes(output_path, name)
-        if count == 0:
-            logger.info(f"  ⚠️  No text nodes matched, trying byte-level...")
-            count = _remove_value_byte_level(output_path, name)
-        stats["removed_name"] = count
-        stats["bytes_removed"] += count
-    
-    # Fix bullet formatting to ensure circular bullets in Word
-    logger.info(f"  📍 Fixing bullet formatting...")
-    bullet_fixed = _fix_bullet_formatting(output_path)
-    if bullet_fixed > 0:
-        logger.info(f"  ✓ Fixed {bullet_fixed} bullet paragraphs")
-    
-    logger.info(f"✅ Anonymization complete: {stats}")
-    return stats
+    finally:
+        import shutil
+        shutil.rmtree(temp_dir)

@@ -11,6 +11,7 @@ from utils.humanize_core import (
     preserve_linebreaks_rewrite,
     count_words,
     count_sentences,
+    grammar_post_process,
 )
 
 
@@ -42,9 +43,10 @@ app = FastAPI(
 
 class HumanizeRequest(BaseModel):
     text: str = Field(..., description="The input text to humanize. Must be non-empty.")
-    p_syn: Optional[float] = Field(1.0, ge=0.0, le=1.0, description="Synonym replacement intensity (0.0-1.0)")
+    p_syn: Optional[float] = Field(0.50, ge=0.0, le=1.0, description="Synonym replacement intensity (0.0-1.0) - ZERO DETECTION APPROACH")
     p_trans: Optional[float] = Field(0.5, ge=0.0, le=1.0, description="Academic transition insertion probability (0.0-1.0)")
     preserve_linebreaks: Optional[bool] = Field(True, description="Whether to preserve original line breaks")
+    grammar_cleanup: Optional[bool] = Field(True, description="Apply rule-based grammar post-processing (punctuation, spacing, articles, light agreement)")
 
     class Config:
         schema_extra = {
@@ -133,6 +135,10 @@ def humanize(req: HumanizeRequest):
         final_text = re.sub(r"[ \t]+(\))", r"\1", final_text)
         final_text = re.sub(r"[ \t]{2,}", " ", final_text)
         final_text = re.sub(r"``\s*(.+?)\s*''", r'"\1"', final_text)
+
+        # Optional grammar post-processing (rule-based only, no rewrites)
+        if req.grammar_cleanup:
+            final_text = grammar_post_process(final_text)
 
         new_wc = count_words(final_text)
         new_sc = count_sentences(final_text)
