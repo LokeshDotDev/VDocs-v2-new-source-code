@@ -6,15 +6,15 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "4000:4000"
     environment:
       - NODE_ENV=production
-  - DATABASE_URL=postgresql://postgres:password@pgbouncer:6432/express_template
+      - DATABASE_URL=postgresql://postgres:password@pgbouncer:6432/express_template
       - JWT_SECRET=production-jwt-secret-change-me
       - BCRYPT_ROUNDS=12
       - BASIC_AUTH_USERNAME=admin
       - BASIC_AUTH_PASSWORD=secure-admin-password
-      - CORS_ORIGIN=http://localhost:3000
+      - CORS_ORIGIN=http://localhost:3001
       - LOG_LEVEL=info
       - LOG_PRETTY=false
       - ENABLE_CLUSTER=true

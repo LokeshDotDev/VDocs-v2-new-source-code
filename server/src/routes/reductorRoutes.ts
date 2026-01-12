@@ -200,7 +200,7 @@ router.post('/redact', async (req, res) => {
     console.log('[reductor/redact] Downloading file from MinIO:', fileKey);
     // Download file from MinIO to temp location
     await new Promise<void>((resolve, reject) => {
-      minioClient.fGetObject(MINIO_BUCKET, fileKey, inputPath, (err) => {
+      (minioClient as any).fGetObject(MINIO_BUCKET, fileKey, inputPath, (err: any) => {
         if (err) reject(err);
         else resolve();
       });

@@ -221,7 +221,7 @@ services:
       TUS_SERVER_URL: http://tus-server:4001
       JWT_SECRET: vdocs-production-secret-key-change-in-production
       JWT_EXPIRE: 24h
-      CORS_ORIGIN: http://localhost:3000
+      CORS_ORIGIN: http://localhost:3001
     depends_on:
       postgres:
         condition: service_healthy
@@ -269,7 +269,7 @@ services:
     networks:
       - wedocs-net
     ports:
-      - "3000:3000"
+      - "3001:3000"
 
 # ==================== VOLUMES ====================
 volumes:

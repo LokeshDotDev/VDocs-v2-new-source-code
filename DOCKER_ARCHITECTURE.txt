@@ -1,0 +1,226 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                  VDOCS - COMPLETE DOCKER ARCHITECTURE                      ║
+║                         12 January 2026                                     ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        USER INTERFACE LAYER                              │
+└─────────────────────────────────────────────────────────────────────────┘
+                              ┌──────────────┐
+                              │  FRONTEND    │
+                              │ Next.js 3000 │
+                              └──────┬───────┘
+                                     │
+                        ┌────────────┼────────────┐
+                        ▼            ▼            ▼
+                  ┌─────────┐  ┌────────────┐  ┌─────────┐
+                  │ Backend │  │ TUS Server │  │ONLYOFFICE
+                  │API 3001 │  │ 4000       │  │Editor8080
+                  └────┬────┘  └────────────┘  └─────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       APPLICATION LOGIC LAYER                            │
+└─────────────────────────────────────────────────────────────────────────┘
+                         ┌──────────────────────┐
+                         │  NODE.JS BACKEND     │
+                         │  (API Server 3001)   │
+                         └──────────┬───────────┘
+                                    │
+                    ┌───────────────┼───────────────┐
+                    ▼               ▼               ▼
+            ┌──────────────┐  ┌─────────────┐  ┌──────────┐
+            │ File Upload  │  │ AI Detection │  │Document  │
+            │  (TUS 4000)  │  │ Humanizer   │  │ Processor│
+            └──────────────┘  │  (5000)     │  └──────────┘
+                              └──────┬──────┘
+                                     │
+              ┌──────────┬──────────┬─┴──────┬──────────┐
+              ▼          ▼          ▼        ▼          ▼
+         ┌────────┐┌────────┐┌─────────┐┌────────┐┌──────────┐
+         │Humanize││Grammar ││Reductor ││PDF2HTML││LibreOffice
+         │Module  ││Checker ││Service  ││Service ││Converter │
+         │(5002)  ││(5003)  ││(5004)   ││(5005)  ││(2002)    │
+         └────────┘└────────┘└─────────┘└────────┘└──────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       STORAGE & DATA LAYER                               │
+└─────────────────────────────────────────────────────────────────────────┘
+                    ┌─────────────────────────────┐
+                    │      INFRASTRUCTURE         │
+                    └────────────┬────────────────┘
+                                 │
+                    ┌────────────┴────────────┐
+                    ▼                         ▼
+              ┌────────────┐          ┌───────────────┐
+              │PostgreSQL  │          │    MinIO      │
+              │Database    │          │ (S3 Storage)  │
+              │(5433)      │          │ (9000/9001)   │
+              └────────────┘          └───────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        NETWORK TOPOLOGY                                  │
+└─────────────────────────────────────────────────────────────────────────┘
+
+All services connected via: wedocs-net (Bridge Network)
+Subnet: 172.28.0.0/16
+
+Internal Service-to-Service Communication:
+  • Backend → Python Services: http://<service>:<port>
+  • Python Services → MinIO: http://minio:9000
+  • All Services → PostgreSQL: postgresql://postgres:5432
+
+External Access (from host):
+  • Via mapped ports (localhost:<port>)
+  • Direct to service IP only within docker network
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         SERVICES MANIFEST                                │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ # │ Service Name             │ Port │ Technology  │ Status              │
+├────────────────────────────────────────────────────────────────────────┤
+│ 1 │ PostgreSQL               │5433 │ PostgreSQL  │ Healthy             │
+│ 2 │ MinIO (Storage)          │9000 │ MinIO       │ Healthy             │
+│ 3 │ Python Manager           │5000 │ FastAPI     │ Healthy             │
+│ 4 │ Humanizer Module         │5002 │ FastAPI     │ Healthy             │
+│ 5 │ Spell Grammar Checker    │5003 │ FastAPI     │ Healthy             │
+│ 6 │ Reductor Service         │5004 │ FastAPI     │ Healthy             │
+│ 7 │ PDF2HTMLEx Service       │5005 │ FastAPI     │ Healthy             │
+│ 8 │ Backend API Server       │3001 │ Node.js     │ Healthy             │
+│ 9 │ TUS Upload Server        │4000 │ Node.js     │ Healthy             │
+│10 │ ONLYOFFICE Server        │8080 │ ONLYOFFICE  │ Healthy             │
+│11 │ Next.js Frontend         │3000 │ Next.js     │ Healthy             │
+└────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      DATA FLOW EXAMPLE                                   │
+└─────────────────────────────────────────────────────────────────────────┘
+
+User uploads AI-generated document:
+
+  Frontend → TUS Server → MinIO Storage
+                ↓
+          Backend Server
+             ↓      ↓      ↓
+        [Check AI] [Humanize] [Check Grammar]
+             ↓      ↓      ↓
+        Python Manager Service
+             ↓
+      Store Results in PostgreSQL
+             ↓
+      Return to Frontend
+             ↓
+         Display to User
+
+Everything coordinated automatically by Docker.
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      STARTUP SEQUENCE                                    │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Phase 1 (Infrastructure - 20 seconds):
+  └─ PostgreSQL + MinIO start and report healthy status
+
+Phase 2 (Python Services - 15 seconds):
+  └─ Humanizer, Grammar Checker, Reductor, PDF2HTML start
+  └─ Wait for MinIO to be healthy
+
+Phase 3 (Main Services - 15 seconds):
+  └─ Python Manager starts (waits for humanizer + grammar)
+  └─ TUS Server starts (waits for MinIO)
+  └─ Backend Server starts (waits for all above)
+
+Phase 4 (Presentation Layer - 15 seconds):
+  └─ ONLYOFFICE starts
+  └─ Frontend starts (waits for backend + TUS + ONLYOFFICE)
+
+Phase 5 (Ready - 0 seconds):
+  └─ ✅ Complete stack online
+
+Total Startup Time: 60-90 seconds
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       VOLUME MANAGEMENT                                  │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Volume                  Location                   Contains
+─────────────────────────────────────────────────────────────────────────
+postgres_data           /var/lib/postgresql/data   Database files
+minio_data              /data                      S3 objects/files
+onlyoffice_data         /var/www/onlyoffice/Data   Documents
+onlyoffice_logs         /var/log/onlyoffice        ONLYOFFICE logs
+
+Data Persistence:
+  ✓ Survives docker-compose down
+  ✗ Deleted with docker-compose down -v
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    COMMAND QUICK REFERENCE                               │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Start all services:
+  $ docker-compose up -d
+
+Stop all services:
+  $ docker-compose down
+
+View status:
+  $ docker-compose ps
+
+View logs:
+  $ docker-compose logs -f
+  $ docker-compose logs -f <service-name>
+
+Restart:
+  $ docker-compose restart
+  $ docker-compose restart <service-name>
+
+Rebuild:
+  $ docker-compose up -d --build
+  $ docker-compose up -d --build <service-name>
+
+Clean reset:
+  $ docker-compose down -v && docker-compose up -d
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     RESOURCE REQUIREMENTS                                │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Minimum:
+  CPU:    2 cores
+  RAM:    4 GB
+  Disk:   20 GB
+
+Recommended:
+  CPU:    4+ cores
+  RAM:    8+ GB
+  Disk:   50+ GB
+
+Production:
+  CPU:    8+ cores
+  RAM:    16+ GB
+  Disk:   100+ GB SSD
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        KEY FEATURES                                      │
+└─────────────────────────────────────────────────────────────────────────┘
+
+✅ Zero Configuration      - Works out of the box
+✅ Auto Dependencies       - Services wait for dependencies
+✅ Health Monitoring       - All services monitored
+✅ Auto Restart           - Failed services restart automatically
+✅ Data Persistence        - Survives container restarts
+✅ Service Isolation      - Each service independent
+✅ Network Isolation      - Custom bridge network
+✅ Easy Scaling           - Simple port/resource adjustments
+✅ Production Ready       - All optimizations included
+✅ Hot Reload (Dev)       - Source code mounted as volumes
+
+═══════════════════════════════════════════════════════════════════════════
+
+DEPLOYMENT: docker-compose up -d
+
+That's it! Your complete application is running.
+
+═══════════════════════════════════════════════════════════════════════════

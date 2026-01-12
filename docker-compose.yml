@@ -1,27 +1,7 @@
-version: "3.9"
-
 services:
-  libreoffice:
-    image: ghcr.io/linuxserver/libreoffice:latest
-    container_name: libreoffice
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Asia/Kolkata
-    volumes:
-      - ./tmp:/tmp
-    entrypoint:
-      - /usr/bin/soffice
-    command:
-      - --headless
-      - --accept=socket,host=0.0.0.0,port=2002;urp;
-      - --nofirststartwizard
-    ports:
-      - "2002:2002"
-    networks:
-      - wedocs-net
-    restart: always
-
+  # ============================================
+  # DATABASE & STORAGE
+  # ============================================
   postgres:
     image: postgres:16-alpine
     container_name: postgres
@@ -38,6 +18,9 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - wedocs-net
+    restart: unless-stopped
 
   minio:
     image: minio/minio:latest
@@ -48,7 +31,6 @@ services:
     environment:
       - MINIO_ROOT_USER=minioadmin
       - MINIO_ROOT_PASSWORD=minioadmin
-      # Allow all origins for development - ONLYOFFICE and frontend need to fetch docs
       - MINIO_ALLOW_PUBLIC_BUCKET_ACCESS=true
     command: server /data --console-address ":9001"
     volumes:
@@ -60,6 +42,168 @@ services:
       retries: 5
     networks:
       - wedocs-net
+    restart: unless-stopped
+
+  # ============================================
+  # PYTHON SERVICES (AI DETECTION & HUMANIZER)
+  # ============================================
+  python-manager:
+    build:
+      context: ./python-manager
+      dockerfile: Dockerfile
+    container_name: python-manager
+    environment:
+      - PORT=5050
+      - HUMANIZER_MODULE_URL=http://humanizer-module:8000
+      - SPELL_GRAMMAR_CHECKER_URL=http://spell-grammar-checker:8001
+    ports:
+      - "5050:5050"
+    volumes:
+      - ./python-manager:/app
+      - ./tmp:/app/tmp
+    networks:
+      - wedocs-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5050/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      - humanizer-module
+      - spell-grammar-checker
+
+  # Humanizer Sub-module
+  humanizer-module:
+    build:
+      context: ./python-manager/modules/humanizer
+      dockerfile: Dockerfile
+    container_name: humanizer-module
+    environment:
+      - PORT=8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./python-manager/modules/humanizer:/app
+      - ./tmp:/app/tmp
+    networks:
+      - wedocs-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Spell & Grammar Checker Sub-module
+  spell-grammar-checker:
+    build:
+      context: ./python-manager/modules/spell-grammar-checker
+      dockerfile: Dockerfile
+    container_name: spell-grammar-checker
+    environment:
+      - PORT=8001
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./python-manager/modules/spell-grammar-checker:/app
+      - ./tmp:/app/tmp
+    networks:
+      - wedocs-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Reductor Service (Document Anonymization)
+  reductor-service:
+    build:
+      context: ./reductor-module/reductor-service-v2
+      dockerfile: Dockerfile
+    container_name: reductor-service
+    environment:
+      - PORT=5018
+      - MINIO_ENDPOINT=minio
+      - MINIO_PORT=9000
+      - MINIO_USE_SSL=false
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET=wedocs
+    ports:
+      - "5018:5018"
+    volumes:
+      - ./reductor-module/reductor-service-v2:/app
+      - ./tmp:/app/tmp
+    networks:
+      - wedocs-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5018/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  # ============================================
+  # DOCUMENT CONVERSION - DISABLED
+  # ============================================
+  # libreoffice:
+  #   image: ghcr.io/linuxserver/libreoffice:latest
+  #   container_name: libreoffice
+  #   environment:
+  #     - PUID=1000
+  #     - PGID=1000
+  #     - TZ=Asia/Kolkata
+  #   volumes:
+  #     - ./tmp:/tmp
+  #   entrypoint:
+  #     - /usr/bin/soffice
+  #   command:
+  #     - --headless
+  #     - --accept=socket,host=0.0.0.0,port=2002;urp;
+  #     - --nofirststartwizard
+  #   ports:
+  #     - "2002:2002"
+  #   networks:
+  #     - wedocs-net
+  #   restart: unless-stopped
+
+  # ============================================
+  # NODE.JS SERVICES
+  # ============================================
+  tus-server:
+    build:
+      context: ./tus-server
+      dockerfile: Dockerfile
+    container_name: tus-server
+    environment:
+      - PORT=4001
+      - MINIO_ENDPOINT=minio
+      - MINIO_PORT=9000
+      - MINIO_USE_SSL=false
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET=wedocs
+    ports:
+      - "4001:4001"
+    volumes:
+      - ./tus-server:/app
+      - ./tmp:/app/tmp
+    networks:
+      - wedocs-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      minio:
+        condition: service_healthy
 
   server:
     build:
@@ -69,7 +213,7 @@ services:
     env_file:
       - ./server/.env
     environment:
-      - NODE_ENV=development
+      - NODE_ENV=production
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/wedocs
       - MINIO_ENDPOINT=minio
       - MINIO_PORT=9000
@@ -77,76 +221,41 @@ services:
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
       - MINIO_BUCKET=wedocs
-      - PYTHON_MANAGER_URL=http://python-manager:5000
-    ports:
-      - "3001:3000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      python-manager:
-        condition: service_started
-    command: ["npm", "run", "dev"]
-
-  tus-server:
-    build:
-      context: ./tus-server
-      dockerfile: Dockerfile
-    container_name: tus-server
-    environment:
-      - MINIO_ENDPOINT=minio
-      - MINIO_PORT=9000
-      - MINIO_USE_SSL=false
-      - MINIO_ACCESS_KEY=minioadmin
-      - MINIO_SECRET_KEY=minioadmin
-      - MINIO_BUCKET=wedocs
+      - PYTHON_MANAGER_URL=http://python-manager:5050
+      - HUMANIZER_URL=http://humanizer-module:8000
+      - REDUCTOR_URL=http://reductor-service:5018
+      - SPELL_GRAMMAR_URL=http://spell-grammar-checker:8001
+      - TUS_SERVER_URL=http://tus-server:4001
     ports:
       - "4000:4000"
+    volumes:
+      - ./server:/app
+      - ./tmp:/app/tmp
+    networks:
+      - wedocs-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     depends_on:
-      minio:
-        condition: service_healthy
-    command: ["npm", "run", "dev"]
+      - postgres
+      - minio
+      - python-manager
+      - tus-server
+      - reductor-service
 
-  python-manager:
-    build:
-      context: ./python-manager
-      dockerfile: Dockerfile
-    container_name: python-manager
-    environment:
-      - PORT=5000
-      - CONVERTER_MODULE_URL=http://converter-module:5001
-    ports:
-      - "5000:5000"
-    depends_on:
-      - converter-module
-
-  converter-module:
-    build:
-      context: ./python-manager/modules/converter-module
-      dockerfile: Dockerfile
-    container_name: converter-module
-    environment:
-      - PORT=5001
-      - MINIO_ENDPOINT=minio:9000
-      - MINIO_ACCESS_KEY=minioadmin
-      - MINIO_SECRET_KEY=minioadmin
-      - MINIO_BUCKET=wedocs
-    ports:
-      - "5001:5001"
-    depends_on:
-      minio:
-        condition: service_healthy
-
+  # ============================================
+  # DOCUMENT EDITING (ONLYOFFICE)
+  # ============================================
   onlyoffice-document-server:
     image: onlyoffice/documentserver:latest
     container_name: onlyoffice-document-server
     environment:
       - JWT_ENABLED=false
       - JWT_SECRET=your-secret-key-change-in-production
-      # Configure ONLYOFFICE to use proper hostname for WebSocket
       - WOPI_HOST=localhost:8080
-      # Allow ONLYOFFICE to download from private IPs (host.docker.internal)
       - ALLOW_PRIVATE_IP_ADDRESS=true
       - ALLOW_META_IP_ADDRESS=true
     ports:
@@ -158,32 +267,66 @@ services:
       - "host.docker.internal:host-gateway"
     stdin_open: true
     tty: true
-    restart: always
     networks:
       - wedocs-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
+  # ============================================
+  # FRONTEND
+  # ============================================
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_BASE=http://localhost:4000
+        - NEXT_PUBLIC_TUS_ENDPOINT=http://localhost:4001/files
+        - NEXT_PUBLIC_ONLYOFFICE_API_URL=http://localhost:8080
     container_name: frontend
     environment:
-      - NEXT_PUBLIC_TUS_ENDPOINT=http://localhost:4000/files
-      - NEXT_PUBLIC_API_BASE=http://localhost:3000
+      - NEXT_PUBLIC_TUS_ENDPOINT=http://localhost:4001/files
+      - NEXT_PUBLIC_API_BASE=http://localhost:4000
       - NEXT_PUBLIC_ONLYOFFICE_API_URL=http://localhost:8080
     ports:
       - "3001:3000"
+    volumes:
+      - ./frontend:/app
+    networks:
+      - wedocs-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     depends_on:
       - server
       - tus-server
-      - onlyoffice-document-server
 
+# ============================================
+# VOLUMES
+# ============================================
 volumes:
-  minio_data:
   postgres_data:
+    driver: local
+  minio_data:
+    driver: local
   onlyoffice_data:
+    driver: local
   onlyoffice_logs:
+    driver: local
 
+# ============================================
+# NETWORKS
+# ============================================
 networks:
   wedocs-net:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

@@ -84,7 +84,7 @@ export const getFileList = async (_req: Request, res: Response) => {
 };
 
 // Load a specific file
-export const loadFile = async (req: Request, res: Response) => {
+export const loadFile = async (req: Request, res: Response): Promise<void> => {
   const { fileId } = req.params;
   try {
     const fileStream = await minioClient.getObject('wedocs', `edited-files/${fileId}`);
@@ -100,7 +100,7 @@ export const loadFile = async (req: Request, res: Response) => {
 };
 
 // Save changes to a file
-export const saveFile = async (req: Request, res: Response) => {
+export const saveFile = async (req: Request, res: Response): Promise<void> => {
   const { fileId } = req.params;
   const { html } = req.body;
   try {

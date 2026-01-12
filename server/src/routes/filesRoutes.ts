@@ -70,19 +70,19 @@ router.get('/docx-proxy', async (req, res, next) => {
     const headers: Record<string, string> = {};
     if (req.headers['range']) headers['range'] = String(req.headers['range']);
 
-    let response: Response;
+    let fetchResponse: any;
     try {
-      response = await fetch(targetUrl, { method: req.method as any, headers });
+      fetchResponse = await fetch(targetUrl, { method: req.method as any, headers });
     } catch (fetchError) {
       console.error(`[docx-proxy] Network error fetching ${targetUrl}`, fetchError);
       return res.status(502).json({ error: `Failed to fetch document: ${String(fetchError)}` });
     }
 
-    if (!response.ok && response.status !== 206) {
-      console.error(`[docx-proxy] Upstream returned ${response.status}: ${response.statusText}`);
+    if (!fetchResponse.ok && fetchResponse.status !== 206) {
+      console.error(`[docx-proxy] Upstream returned ${fetchResponse.status}: ${fetchResponse.statusText}`);
       return res
-        .status(response.status)
-        .json({ error: `Failed to fetch document: ${response.status} ${response.statusText}` });
+        .status(fetchResponse.status)
+        .json({ error: `Failed to fetch document: ${fetchResponse.status} ${fetchResponse.statusText}` });
     }
 
     // Copy relevant headers
@@ -96,7 +96,7 @@ router.get('/docx-proxy', async (req, res, next) => {
       'cache-control',
     ];
     for (const h of passthroughHeaders) {
-      const v = response.headers.get(h);
+      const v = fetchResponse.headers.get(h);
       if (v) res.setHeader(h, v);
     }
 
@@ -107,14 +107,14 @@ router.get('/docx-proxy', async (req, res, next) => {
     res.setHeader('Access-Control-Expose-Headers', '*');
 
     // Status passthrough (200 or 206)
-    res.status(response.status);
+    res.status(fetchResponse.status);
 
     if (req.method === 'HEAD') {
       return res.end();
     }
 
     // Stream body
-    const reader = response.body?.getReader();
+    const reader = fetchResponse.body?.getReader();
     if (!reader) {
       return res.end();
     }
