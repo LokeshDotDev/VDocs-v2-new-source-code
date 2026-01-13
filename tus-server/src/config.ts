@@ -1,31 +1,34 @@
 import dotenv from "dotenv";
+import { z } from "zod";
 
 dotenv.config();
 
-const asBool = (value: string | undefined, fallback: boolean): boolean => {
-	if (value === undefined) return fallback;
-	return value.toLowerCase() === "true" || value === "1";
-};
+const configSchema = z.object({
+	PORT: z.coerce.number().min(1).max(65535),
+	TUS_PATH: z.string(),
+	TUS_STORAGE_DIR: z.string(),
+	MAX_UPLOAD_SIZE_BYTES: z.coerce.number().min(1),
+	MINIO_ENDPOINT: z.string(),
+	MINIO_PORT: z.coerce.number().min(1).max(65535),
+	MINIO_USE_SSL: z.enum(["true", "false"]).transform((val) => val === "true"),
+	MINIO_ACCESS_KEY: z.string(),
+	MINIO_SECRET_KEY: z.string(),
+	MINIO_BUCKET: z.string(),
+});
 
-const asInt = (value: string | undefined, fallback: number): number => {
-	const parsed = Number.parseInt(value ?? "", 10);
-	return Number.isFinite(parsed) ? parsed : fallback;
-};
+const envVars = configSchema.parse(process.env);
 
 export const config = {
-	port: asInt(process.env.PORT, 4000),
-	tusPath: process.env.TUS_PATH || "/files",
-	storageDir: process.env.TUS_STORAGE_DIR || "./.data/tus",
-	maxUploadSizeBytes: asInt(
-		process.env.MAX_UPLOAD_SIZE_BYTES,
-		20 * 1024 * 1024 * 1024
-	),
+	port: envVars.PORT,
+	tusPath: envVars.TUS_PATH,
+	storageDir: envVars.TUS_STORAGE_DIR,
+	maxUploadSizeBytes: envVars.MAX_UPLOAD_SIZE_BYTES,
 	minio: {
-		endpoint: process.env.MINIO_ENDPOINT || "localhost",
-		port: asInt(process.env.MINIO_PORT, 9000),
-		useSSL: asBool(process.env.MINIO_USE_SSL, false),
-		accessKey: process.env.MINIO_ACCESS_KEY || "minioadmin",
-		secretKey: process.env.MINIO_SECRET_KEY || "minioadmin",
-		bucket: process.env.MINIO_BUCKET || "wedocs",
+		endpoint: envVars.MINIO_ENDPOINT,
+		port: envVars.MINIO_PORT,
+		useSSL: envVars.MINIO_USE_SSL,
+		accessKey: envVars.MINIO_ACCESS_KEY,
+		secretKey: envVars.MINIO_SECRET_KEY,
+		bucket: envVars.MINIO_BUCKET,
 	},
 };

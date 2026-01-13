@@ -24,9 +24,12 @@ COPY . .
 # Create tmp directory
 RUN mkdir -p tmp
 
+# Expose port (important for Dokploy / Traefik)
+EXPOSE 8000
+
 # Health check
 HEALTHCHECK --interval=15s --timeout=10s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
 
-# Run the application
-CMD ["python", "-m", "uvicorn", "api.humanize_api:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the application (use env PORT)
+CMD ["sh", "-c", "uvicorn api.humanize_api:app --host 0.0.0.0 --port ${PORT:-8000}"]

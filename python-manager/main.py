@@ -37,7 +37,7 @@ class DocxHumanizeRequest(BaseModel):
     input_file_path: str
     output_file_path: str
     skip_detect: Optional[bool] = True
-    humanizer_url: Optional[str] = "http://localhost:8000/humanize"
+    humanizer_url: Optional[str] = os.getenv("HUMANIZER_API_URL", "http://localhost:8000/humanize")
 
 class AnonymizeTextRequest(BaseModel):
     text: str
@@ -494,4 +494,7 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=config.PORT)
+    import os
+    host = os.getenv("HOST", "0.0.0.0")
+    port = config.PORT
+    uvicorn.run(app, host=host, port=port)

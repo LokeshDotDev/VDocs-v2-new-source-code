@@ -1,4 +1,4 @@
-import express from "express";
+import express, { Request, Response } from "express";
 import fs from "fs";
 import path from "path";
 import cors from "cors";
@@ -26,12 +26,12 @@ app.use(cors({
 fs.mkdirSync(config.storageDir, { recursive: true });
 
 // Health endpoint - MUST be before TUS handler
-app.get("/health", (_req, res) => {
+app.get("/health", (_req: Request, res: Response) => {
 	res.json({ status: "ok" });
 });
 
 // TUS endpoint
-app.all(`${config.tusPath}*`, async (req, res) => {
+app.all(`${config.tusPath}*`, async (req: Request, res: Response) => {
 	try {
 		await tusServer.handle(req, res);
 	} catch (error) {
@@ -51,7 +51,7 @@ app.all(`${config.tusPath}*`, async (req, res) => {
 });
 
 // MinIO health endpoint
-app.get("/health/minio", async (_req, res) => {
+app.get("/health/minio", async (_req: Request, res: Response) => {
 	const isHealthy = await checkMinIOHealth();
 	res.status(isHealthy ? 200 : 503).json({
 		status: isHealthy ? "connected" : "disconnected",
@@ -59,8 +59,8 @@ app.get("/health/minio", async (_req, res) => {
 });
 
 // Static info endpoint for debugging
-app.get("/debug/uploads", (_req, res) => {
-	const files = fs.readdirSync(config.storageDir).map((name) => ({
+app.get("/debug/uploads", (_req: Request, res: Response) => {
+	const files = fs.readdirSync(config.storageDir).map((name: string) => ({
 		name,
 		path: path.join(config.storageDir, name),
 		size: fs.existsSync(path.join(config.storageDir, name))
@@ -74,7 +74,7 @@ app.get("/debug/uploads", (_req, res) => {
 app.use(express.json());
 
 // Failed uploads endpoint
-app.get("/debug/failed-uploads", (_req, res) => {
+app.get("/debug/failed-uploads", (_req: Request, res: Response) => {
 	const failed = getFailedUploads();
 	res.json({ 
 		failedUploads: failed,
@@ -83,7 +83,7 @@ app.get("/debug/failed-uploads", (_req, res) => {
 });
 
 // Retry failed upload endpoint
-app.post("/debug/retry-upload/:uploadId", async (req, res) => {
+app.post("/debug/retry-upload/:uploadId", async (req: Request, res: Response) => {
 	try {
 		const { uploadId } = req.params;
 		await retryFailedUpload(uploadId);
@@ -102,12 +102,12 @@ app.post("/debug/retry-upload/:uploadId", async (req, res) => {
 });
 
 // Process pending uploads endpoint - manually trigger processing for files in storage
-app.post("/debug/process-pending", async (_req, res) => {
+app.post("/debug/process-pending", async (_req: Request, res: Response) => {
 	try {
 		const files = fs.readdirSync(config.storageDir);
 		// Filter for actual upload files (not metadata files)
 		const pendingFiles = files.filter(
-			(name) => 
+			(name: string) => 
 				!name.endsWith('.json') && 
 				!name.endsWith('.info') && 
 				!name.endsWith('.uploaded') && 

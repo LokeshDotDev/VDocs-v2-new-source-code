@@ -124,5 +124,12 @@ async def root():
     }
 
 if __name__ == "__main__":
+    import os
+    from dotenv import load_dotenv
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=5002)
+    
+    load_dotenv()
+    port = int(os.getenv("PORT", 5002))
+    host = os.getenv("HOST", "0.0.0.0")
+    
+    uvicorn.run(app, host=host, port=port)

@@ -42,7 +42,7 @@ export const getAllUsers = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const getUserById = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const userId = req.params['id'];
+  const userId = req.params['id'] as string;
   if (!userId) {
     res.status(400).json({
       success: false,
@@ -81,7 +81,7 @@ export const getUserById = asyncHandler(async (req: Request, res: Response): Pro
 });
 
 export const deleteUser = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const userId = req.params['id'];
+  const userId = req.params['id'] as string;
   if (!userId) {
     res.status(400).json({
       success: false,

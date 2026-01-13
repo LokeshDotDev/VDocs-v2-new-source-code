@@ -50,7 +50,7 @@ router.post('/detect-batch', async (req: Request, res: Response): Promise<void> 
  * GET /api/ai-detection/job/:jobId
  */
 router.get('/job/:jobId', (req: Request, res: Response): void => {
-  const { jobId } = req.params;
+  const jobId = req.params.jobId as string;
 
   if (!jobId) {
     res.status(400).json({ error: 'jobId required' });
