@@ -63,7 +63,7 @@ export async function GET() {
 
 		const avgProcessingTime =
 			completedJobsWithDuration.length > 0
-				? completedJobsWithDuration.reduce((sum, job) => sum + (job.duration || 0), 0) /
+				? completedJobsWithDuration.reduce((sum: number, job) => sum + (job.duration || 0), 0) /
 				  completedJobsWithDuration.length
 				: 0;
 
