@@ -6,7 +6,7 @@ import {
   getFileList,
   loadFile,
   saveFile,
-} from '../controllers/editorController';
+} from '../controllers/editorController.js';
 
 const router = Router();
 
