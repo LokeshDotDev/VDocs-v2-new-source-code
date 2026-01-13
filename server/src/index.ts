@@ -34,7 +34,7 @@ const app = express();
 
 // Security best-practice
 app.disable('x-powered-by');
-app.set('trust proxy', config.TRUST_PROXY);
+app.set('trust proxy', 1);
 
 // Security middleware
 app.use(helmet());
