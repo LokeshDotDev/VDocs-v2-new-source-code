@@ -61,9 +61,13 @@ export async function GET() {
 			select: { duration: true },
 		});
 
+		interface JobWithDuration {
+			duration: number | null;
+		}
+
 		const avgProcessingTime =
 			completedJobsWithDuration.length > 0
-				? completedJobsWithDuration.reduce((sum: number, job) => sum + (job.duration || 0), 0) /
+				? completedJobsWithDuration.reduce((sum: number, job: JobWithDuration) => sum + (job.duration || 0), 0) /
 				  completedJobsWithDuration.length
 				: 0;
 
@@ -78,7 +82,32 @@ export async function GET() {
 		const successRate =
 			totalJobs > 0 ? (completedJobs / totalJobs) * 100 : 0;
 
-		return NextResponse.json({
+		interface DashboardStats {
+			totalUsers: number;
+			activeUsers: number;
+			totalJobs: number;
+			completedJobs: number;
+			failedJobs: number;
+			processingJobs: number;
+			avgProcessingTime: number;
+			totalFileSize: number;
+			successRate: number;
+		}
+
+		interface RecentJob {
+			id: string;
+			fileName: string;
+			status: string;
+			createdAt: Date;
+			duration: number | null;
+		}
+
+		interface DashboardResponse {
+			stats: DashboardStats;
+			recentJobs: RecentJob[];
+		}
+
+		const response: DashboardResponse = {
 			stats: {
 				totalUsers,
 				activeUsers,
@@ -90,14 +119,16 @@ export async function GET() {
 				totalFileSize,
 				successRate,
 			},
-			recentJobs: recentJobs.map((job) => ({
+			recentJobs: recentJobs.map((job: typeof recentJobs[0]): RecentJob => ({
 				id: job.id,
 				fileName: job.fileName,
 				status: job.status,
 				createdAt: job.createdAt,
 				duration: job.duration,
 			})),
-		});
+		};
+
+		return NextResponse.json(response);
 	} catch (error) {
 		console.error("Dashboard error:", error);
 		return NextResponse.json(
