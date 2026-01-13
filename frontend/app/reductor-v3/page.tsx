@@ -50,7 +50,7 @@ export default function ReductorV3Page() {
 			if (!response.ok) throw new Error("Failed to fetch files");
 
 			const data = await response.json();
-			const fileList = data.files.map((file: any) => ({
+			const fileList = data.files.map((file: { key: string; name: string }) => ({
 				fileKey: file.key,
 				fileName: file.name,
 				selected: false
@@ -146,12 +146,12 @@ export default function ReductorV3Page() {
 					status: "success",
 					redactedFileKey: result.redactedFileKey
 				});
-			} catch (error: any) {
+			} catch (error: unknown) {
 				newResults.push({
 					fileKey: file.fileKey,
 					fileName: file.fileName,
 					status: "error",
-					error: error.message
+					error: error instanceof Error ? error.message : "Redaction failed"
 				});
 			}
 

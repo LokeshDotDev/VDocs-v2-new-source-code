@@ -8,12 +8,18 @@ interface MinioFile {
   lastModified: string;
 }
 
+interface RedactionResult {
+  download_url?: string;
+  original_file?: string;
+  anonymized_file?: string;
+}
+
 export default function ReductorPage() {
   const [files, setFiles] = useState<MinioFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [results, setResults] = useState<Map<string, any>>(new Map());
+  const [results, setResults] = useState<Map<string, RedactionResult>>(new Map());
 
   // Fetch DOCX files from MinIO
   useEffect(() => {
@@ -23,8 +29,9 @@ export default function ReductorPage() {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
         setFiles(data.files || []);
-      } catch (err: any) {
-        setError(err.message || "Failed to fetch files");
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Failed to fetch files";
+        setError(message);
       } finally {
         setLoading(false);
       }
@@ -47,8 +54,9 @@ export default function ReductorPage() {
       }
       const data = await resp.json();
       setResults((prev) => new Map(prev).set(fileKey, data));
-    } catch (err: any) {
-      setError(err.message || "Anonymization failed");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Anonymization failed";
+      setError(message);
     } finally {
       setProcessing(null);
     }
@@ -99,19 +107,19 @@ export default function ReductorPage() {
                       <p className="text-sm text-green-700 font-medium">✅ Anonymization Complete</p>
                       <div className="flex gap-2">
                         <a
-                          href={result.download_url}
+                          href={result.download_url || "#"}
                           className="px-3 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700"
                         >
                           Download Anonymized
                         </a>
                         <a
-                          href={`/api/reductor/download?fileKey=${encodeURIComponent(result.original_file)}`}
+                          href={`/api/reductor/download?fileKey=${encodeURIComponent(result.original_file || "")}`}
                           className="px-3 py-2 bg-gray-400 text-white text-sm rounded hover:bg-gray-500"
                         >
                           Download Original
                         </a>
                       </div>
-                      <p className="text-xs text-gray-500">Output: {result.anonymized_file}</p>
+                      <p className="text-xs text-gray-500">Output: {result.anonymized_file || "N/A"}</p>
                     </div>
                   )}
                 </div>

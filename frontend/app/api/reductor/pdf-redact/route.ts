@@ -33,35 +33,34 @@ export async function POST(request: NextRequest) {
     const pdfWriteStream = fs.createWriteStream(tempPdfPath);
     try {
       await new Promise<void>((resolve, reject) => {
-        minioClient.getObject(bucket, fileKey, (err, dataStream) => {
-          if (err) {
-            console.error("MinIO getObject error:", {
-              bucket,
-              fileKey,
-              minioConfig: {
-                endPoint: process.env.MINIO_ENDPOINT,
-                port: process.env.MINIO_PORT,
-                useSSL: process.env.MINIO_USE_SSL,
-                accessKey: process.env.MINIO_ACCESS_KEY,
-                secretKey: process.env.MINIO_SECRET_KEY ? '***' : undefined,
-              },
-              error: err,
-            });
-            return reject(err);
-          }
+        minioClient.getObject(bucket, fileKey).then((dataStream) => {
           dataStream.pipe(pdfWriteStream);
           dataStream.on("end", resolve);
           dataStream.on("error", (streamErr) => {
             console.error("Stream error while downloading from MinIO:", streamErr);
             reject(streamErr);
           });
+        }).catch((err) => {
+          console.error("MinIO getObject error:", {
+            bucket,
+            fileKey,
+            minioConfig: {
+              endPoint: process.env.MINIO_ENDPOINT,
+              port: process.env.MINIO_PORT,
+              useSSL: process.env.MINIO_USE_SSL,
+              accessKey: process.env.MINIO_ACCESS_KEY,
+              secretKey: process.env.MINIO_SECRET_KEY ? '***' : undefined,
+            },
+            error: err,
+          });
+          reject(err);
         });
       });
     } catch (err) {
       console.error("Failed to download PDF from MinIO:", err);
       return NextResponse.json({
         error: "Failed to download PDF from MinIO",
-        details: err && err.message ? err.message : err,
+        details: err instanceof Error ? err.message : String(err),
         bucket,
         fileKey,
       }, { status: 500 });
@@ -99,7 +98,7 @@ export async function POST(request: NextRequest) {
       if (!backendData.redactedFile) throw new Error("No redactedFile in backend response");
     } catch (err) {
       console.error("Failed to call backend server for redaction:", err);
-      return NextResponse.json({ error: "Redaction failed", details: err && err.message ? err.message : err }, { status: 500 });
+      return NextResponse.json({ error: "Redaction failed", details: err instanceof Error ? err.message : String(err) }, { status: 500 });
     }
 
     // 3. Upload redacted DOCX to MinIO
@@ -108,7 +107,7 @@ export async function POST(request: NextRequest) {
       await minioClient.fPutObject(bucket, redactedKey, redactedDocxPath, { 'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
     } catch (uploadErr) {
       console.error('Failed to upload redacted DOCX to MinIO:', uploadErr);
-      return NextResponse.json({ error: 'Failed to upload redacted DOCX to MinIO', details: uploadErr && uploadErr.message ? uploadErr.message : uploadErr }, { status: 500 });
+      return NextResponse.json({ error: 'Failed to upload redacted DOCX to MinIO', details: uploadErr instanceof Error ? uploadErr.message : String(uploadErr) }, { status: 500 });
     }
 
     // 4. Return the MinIO key for the redacted DOCX

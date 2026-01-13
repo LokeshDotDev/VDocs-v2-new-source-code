@@ -24,7 +24,7 @@ const CKEditorWrapper: React.FC<CKEditorWrapperProps> = ({
 
 	const handleReady = (editor: Editor) => {
 		editorRef.current = editor;
-		const toolbar = editor.ui?.view?.toolbar?.element;
+		const toolbar = (editor.ui?.view as unknown as { toolbar?: { element?: HTMLElement } })?.toolbar?.element;
 		const toolbarContainer = document.querySelector("#toolbar-container");
 		if (toolbar && toolbarContainer) {
 			toolbarContainer.appendChild(toolbar);

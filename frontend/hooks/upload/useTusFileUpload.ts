@@ -403,6 +403,10 @@ export const useTusFileUpload = () => {
 		): Promise<void> => {
 			return new Promise((resolve, reject) => {
 				const file = queuedFile.file;
+				if (!file) {
+					reject(new Error("File is missing from queuedFile"));
+					return;
+				}
 				const start = partIndex * partSize;
 				const end = Math.min(start + partSize, file.size);
 				const partBlob = file.slice(start, end);

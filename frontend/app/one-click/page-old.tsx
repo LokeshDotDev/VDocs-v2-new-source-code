@@ -56,11 +56,12 @@ export default function OneClickPage() {
       setStatus("completed");
       addLog("Processing complete! Ready to download.");
       
-    } catch (err: any) {
+        } catch (err: unknown) {
       console.error(err);
       setStatus("error");
-      setErrorMsg(err.message);
-      addLog(`Error: ${err.message}`);
+            const message = err instanceof Error ? err.message : "Processing failed";
+            setErrorMsg(message);
+            addLog(`Error: ${message}`);
     }
   };
 

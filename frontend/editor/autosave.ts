@@ -1,6 +1,6 @@
 import { debounce } from "lodash";
 
-const autosave = (editor, saveCallback) => {
+const autosave = (editor: { getData: () => string; model: { document: { on: (event: string, callback: () => void) => void } } }, saveCallback: (html: string) => Promise<void>) => {
 	const saveChanges = debounce(async () => {
 		const html = editor.getData();
 		try {

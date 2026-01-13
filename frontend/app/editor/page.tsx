@@ -5,9 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Upload, FileText, Download } from "lucide-react";
 import { useSession } from "next-auth/react";
 
+type DocEditorInstance = {
+	destroyEditor: () => void;
+};
+
 declare global {
 	interface Window {
-		DocsAPI?: any;
+		DocsAPI?: {
+			DocEditor: new (id: string, config: unknown) => DocEditorInstance;
+		};
 	}
 }
 
@@ -21,7 +27,7 @@ export default function EditorPage() {
 	const [fileExt, setFileExt] = useState<string>("docx");
 	const [showNextPrompt, setShowNextPrompt] = useState(false);
 	const fileInputRef = useRef<HTMLInputElement>(null);
-	const editorRef = useRef<any>(null);
+	const editorRef = useRef<DocEditorInstance | null>(null);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const { data: session } = useSession();
 
@@ -154,7 +160,7 @@ export default function EditorPage() {
 					console.log("Document ready");
 					setEditorReady(true);
 				},
-				onError: (error: any) => {
+				onError: (error: unknown) => {
 					console.error("OnlyOffice error:", error);
 				},
 			},
@@ -162,18 +168,18 @@ export default function EditorPage() {
 			height: "100%",
 		};
 
+	if (window.DocsAPI) {
 		editorRef.current = new window.DocsAPI.DocEditor(
 			containerRef.current.id,
 			config
 		);
-	};
+	}
+};
 
 // Download is available via OnlyOffice toolbar; keeping handler removed from UI to declutter.
 
-	const handleDownloadWithPrompt = async () => {
-		if (!documentKey) return;
-		const userId = session?.user?.id || "anonymous";
-
+const handleDownloadWithPrompt = async () => {	if (!documentKey) return;
+	const userId = session?.user?.id || "anonymous";
 		try {
 			const response = await fetch(
 				`/api/editor/download-local?key=${documentKey}&ext=${fileExt}&name=${encodeURIComponent(

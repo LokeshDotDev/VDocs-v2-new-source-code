@@ -63,14 +63,18 @@ export default function OneClickPage() {
 		};
 	}, []);
 
+	const getRelativePath = (file: File) => {
+		const candidate = file as File & { webkitRelativePath?: string };
+		return candidate.webkitRelativePath || file.name;
+	};
+
 	const ingestFiles = (files: File[]) => {
 		const pdfFiles = files.filter(f => f.name.toLowerCase().endsWith(".pdf"));
 		if (pdfFiles.length === 0) return;
 
 		const structure = new Map<string, File[]>();
 		pdfFiles.forEach((file) => {
-			// @ts-ignore - webkitRelativePath is provided by folder selection / drag-drop
-			const relativePath = file.webkitRelativePath || file.name;
+			const relativePath = getRelativePath(file);
 			const pathParts = relativePath.split("/");
 			const folderPath = pathParts.slice(0, -1).join("/") || "root";
 
@@ -126,12 +130,6 @@ export default function OneClickPage() {
 				if (!response.ok) return;
 				const data = await response.json();
 
-				setStatus({
-					stage: data.stage,
-					progress: data.progress,
-					message: data.message,
-					error: data.error,
-				});
 
 				if (data.stage === "complete" || data.error) {
 					clearPolling();
@@ -203,11 +201,10 @@ export default function OneClickPage() {
 			localStorage.setItem("oneClickJobId", newJobId);
 			setJobId(newJobId);
 
-			// Upload all files with TUS
-			let uploadedCount = 0;
-			for (const file of uploadedFiles) {
-				// @ts-ignore
-				const relativePath = file.webkitRelativePath || file.name;
+		// Upload all files with TUS
+		let uploadedCount = 0;
+		for (const file of uploadedFiles) {
+			const relativePath = getRelativePath(file);
 				
 				const fileMetadata = {
 					...metadata,
@@ -306,7 +303,7 @@ export default function OneClickPage() {
 						type="file"
 						ref={fileInputRef}
 						onChange={handleFolderSelect}
-						// @ts-ignore
+					// @ts-expect-error: webkitdirectory is a non-standard attribute
 						webkitdirectory=""
 						directory=""
 						multiple

@@ -338,7 +338,7 @@ export default function AIDetectionPage() {
 				<Alert>
 					<AlertCircle className='h-4 w-4' />
 					<AlertDescription>
-						Select files and click "Start Detection" to analyze your documents
+						Select files and click &quot;Start Detection&quot; to analyze your documents
 					</AlertDescription>
 				</Alert>
 			)}

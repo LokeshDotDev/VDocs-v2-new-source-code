@@ -38,7 +38,7 @@ export interface BatchConversionResult {
 	failed: number;
 	results: Array<{
 		status: "success" | "error";
-		result?: any;
+		result?: unknown;
 		error?: string;
 	}>;
 }

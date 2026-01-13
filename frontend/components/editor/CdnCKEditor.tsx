@@ -2,9 +2,24 @@
 
 import { useEffect, useRef } from "react";
 
+type DecoupledEditorInstance = {
+	ui: { view: { toolbar: { element: HTMLElement } } };
+	model: { document: { on: (event: string, callback: () => void) => void } };
+	getData: () => string;
+	setData: (html: string) => void;
+	destroy: () => Promise<void>;
+};
+
+type DecoupledEditorStatic = {
+	create: (
+		element: HTMLElement,
+		config?: Record<string, unknown>
+	) => Promise<DecoupledEditorInstance>;
+};
+
 declare global {
 	interface Window {
-		DecoupledEditor?: any;
+		DecoupledEditor?: DecoupledEditorStatic;
 	}
 }
 
@@ -16,7 +31,7 @@ interface Props {
 // Decoupled Document build from CDN for a Word-like editing experience
 export default function CdnCKEditor({ data, onChange }: Props) {
 	const editorRef = useRef<HTMLDivElement>(null);
-	const instanceRef = useRef<any>(null);
+	const instanceRef = useRef<DecoupledEditorInstance | null>(null);
 
 	useEffect(() => {
 		const loadScript = (src: string) =>
@@ -39,7 +54,7 @@ export default function CdnCKEditor({ data, onChange }: Props) {
 
 			if (destroyed || !editorRef.current) return;
 
-			const DecoupledEditor = (window as any).DecoupledEditor;
+			const DecoupledEditor = window.DecoupledEditor;
 
 			const toolbarContainer = document.createElement("div");
 			toolbarContainer.style.display = "flex";
@@ -66,7 +81,7 @@ export default function CdnCKEditor({ data, onChange }: Props) {
 
 			editorRef.current.appendChild(toolbarContainer);
 			editorRef.current.appendChild(editableContainer);
-
+		if (!DecoupledEditor) throw new Error("DecoupledEditor not loaded");
 			const editor = await DecoupledEditor.create(editableContainer, {
 				// Preserve arbitrary HTML to improve fidelity
 				htmlSupport: {

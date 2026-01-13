@@ -17,12 +17,14 @@ interface CKEditorWrapperProps {
 	onChange: (html: string) => void;
 }
 
+type EditorConstructor = typeof Editor;
+
 const CKEditorWrapper: React.FC<CKEditorWrapperProps> = ({
 	data,
 	onChange,
 }) => {
 	const [isClient, setIsClient] = useState(false);
-	const [EditorBuild, setEditorBuild] = useState<any>(null);
+	const [EditorBuild, setEditorBuild] = useState<unknown>(null);
 	const editorRef = useRef<Editor | null>(null);
 
 	useEffect(() => {
@@ -31,16 +33,16 @@ const CKEditorWrapper: React.FC<CKEditorWrapperProps> = ({
 		// Try Classic build first (more compatible with Next/Turbopack). Fallback to Decoupled
 		import("@ckeditor/ckeditor5-build-classic")
 			.then((mod) => {
-				const EditorCtor = (mod as any).default || (mod as any);
-				if (mounted) setEditorBuild(EditorCtor);
+				const ctor = (mod as { default?: unknown }).default || mod;
+				if (mounted) setEditorBuild(ctor);
 			})
 			.catch(async () => {
 				try {
 					const dec = await import(
 						"@ckeditor/ckeditor5-build-decoupled-document/build/ckeditor"
 					);
-					const EditorCtor = (dec as any).default || (dec as any);
-					if (mounted) setEditorBuild(EditorCtor);
+					const ctor = (dec as { default?: unknown }).default || dec;
+					if (mounted) setEditorBuild(ctor);
 				} catch (err) {
 					console.error("Failed to load CKEditor builds", err);
 				}
@@ -66,6 +68,7 @@ const CKEditorWrapper: React.FC<CKEditorWrapperProps> = ({
 	return (
 		<div className='editor-container space-y-4'>
 			<CKEditor
+				// @ts-expect-error: CKEditor component expects constructor, EditorBuild is dynamically loaded
 				editor={EditorBuild}
 				data={data}
 				onReady={handleReady}

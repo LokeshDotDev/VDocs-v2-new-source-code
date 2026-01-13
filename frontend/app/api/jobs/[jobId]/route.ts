@@ -32,8 +32,9 @@ export async function DELETE(
 
     return NextResponse.json({ message: "Job cleaned up successfully" });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Cleanup failed:", error);
-    return NextResponse.json({ error: "Cleanup failed", details: error.message }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json({ error: "Cleanup failed", details: message }, { status: 500 });
   }
 }

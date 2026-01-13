@@ -26,14 +26,19 @@ export async function GET(request: NextRequest) {
 			throw new Error(`API error: ${response.statusText}`);
 		}
 		const data = await response.json();
-		const files = (data.files || []).map((file: any) => ({
+		const files = (data.files || []).map((file: {
+			key: string;
+			name: string;
+			size: number;
+			lastModified: string;
+		}) => ({
 			key: file.key,
 			name: file.name,
 			size: file.size,
 			lastModified: file.lastModified,
 		}));
 		return NextResponse.json(files);
-	} catch (error) {
+	} catch (error: unknown) {
 		console.error("Error fetching files:", error);
 		return NextResponse.json(
 			{ error: "Failed to fetch files" },

@@ -4,10 +4,10 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:4000";
 
 export async function GET(
 	request: NextRequest,
-	{ params }: { params: { fileId: string } }
+	{ params }: { params: Promise<{ fileId: string }> }
 ) {
 	try {
-		const { fileId } = params;
+		const { fileId } = await params;
 
 		if (!fileId) {
 			return NextResponse.json({ error: "Missing fileId" }, { status: 400 });

@@ -5,7 +5,9 @@ import crypto from "crypto";
 
 declare global {
 	interface Window {
-		DocsAPI?: any;
+		DocsAPI?: {
+			DocEditor: new (id: string, config: unknown) => DocEditorInstance;
+		};
 	}
 }
 
@@ -15,13 +17,17 @@ interface OnlyOfficeEditorProps {
 	onSave?: () => void;
 }
 
+type DocEditorInstance = {
+	destroyEditor: () => void;
+};
+
 export default function OnlyOfficeEditor({
 	fileKey,
 	fileName,
 	onSave,
 }: OnlyOfficeEditorProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
-	const editorRef = useRef<any>(null);
+	const editorRef = useRef<DocEditorInstance | null>(null);
 
 	// Generate a simple, unique document key (hash) from the fileKey
 	// ONLYOFFICE needs a key without slashes or spaces
@@ -133,21 +139,25 @@ export default function OnlyOfficeEditor({
 						onDocumentReady: () => {
 							console.log("✅ Document is ready");
 						},
-						onError: (error: any) => {
+						onError: (error: unknown) => {
 							console.error("❌ ONLYOFFICE error:", error);
-							console.error(
-								"Error details:",
-								JSON.stringify(error.data, null, 2)
-							);
+							if (error && typeof error === "object" && "data" in error) {
+								console.error(
+									"Error details:",
+									JSON.stringify((error as { data?: unknown }).data, null, 2)
+								);
+							}
 						},
-						onWarning: (warning: any) => {
+						onWarning: (warning: unknown) => {
 							console.warn("⚠️ ONLYOFFICE warning:", warning);
-							console.warn(
-								"Warning details:",
-								JSON.stringify(warning.data, null, 2)
-							);
+							if (warning && typeof warning === "object" && "data" in warning) {
+								console.warn(
+									"Warning details:",
+									JSON.stringify((warning as { data?: unknown }).data, null, 2)
+								);
+							}
 						},
-						onRequestSaveAs: (event: any) => {
+						onRequestSaveAs: (event: unknown) => {
 							console.log("💾 Save as requested:", event);
 						},
 					},

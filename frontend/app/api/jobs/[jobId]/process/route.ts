@@ -17,22 +17,7 @@ export async function POST(
 
     console.log(`Starting processing for job ${jobId}`);
 
-    // Path to the python script
-    const scriptPath = path.join(process.cwd(), "..", "scripts", "process_job.py");
-    // Adjust path because process.cwd() in Next.js is usually the project root (where package.json is), 
-    // but the script is in scripts/ relative to root.
-    // Wait, process.cwd() is /Users/vivekvyas/Desktop/Vdocs/vdocs-sourceCode/frontend usually?
-    // Let's assume process.cwd() is the root of the Next.js app.
-    // The structure is:
-    // /.../vdocs-sourceCode/
-    //   frontend/
-    //   scripts/
-    
-    // So if cwd is frontend, we need ../scripts/process_job.py
-    // If cwd is root, we need scripts/process_job.py
-    
-    // To be safe, let's try to resolve it.
-    let absoluteScriptPath = path.resolve(process.cwd(), "..", "scripts", "process_job.py");
+    const absoluteScriptPath = path.resolve(process.cwd(), "..", "scripts", "process_job.py");
     
     // Check if it exists? 
     // Actually, exec runs in a shell.
@@ -86,12 +71,12 @@ export async function POST(
         return NextResponse.json({ error: "Processing finished but failed to generate download URL" }, { status: 500 });
     }
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Job processing failed:", error);
     return NextResponse.json({ 
         error: "Job processing failed", 
-        details: error.message,
-        stderr: error.stderr 
+        details: error instanceof Error ? error.message : "Unknown error",
+        stderr: error && typeof error === "object" && "stderr" in error ? (error as { stderr?: string }).stderr : undefined 
     }, { status: 500 });
   }
 }
