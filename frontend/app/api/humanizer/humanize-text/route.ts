@@ -53,9 +53,9 @@ export async function POST(request: NextRequest) {
 				success: true,
 				humanizedText: result.humanized_text || result.text,
 			});
-		} catch (err: any) {
+		} catch (err: unknown) {
 			clearTimeout(timeoutId);
-			if (err.name === "AbortError") {
+			if (err instanceof Error && err.name === "AbortError") {
 				throw new Error("Humanizer service timeout (30s)");
 			}
 			throw err;
