@@ -8,41 +8,113 @@ Production-ready TUS endpoint using Express with streaming finalization to MinIO
 cd tus-server
 cp .env.example .env
 npm install
-npm run dev
+npm run build
+npm start
 ```
 
-The server listens on `PORT` (default 4000) and exposes the TUS path at `TUS_PATH` (default `/files`). Point Uppy/TUS clients to `http://localhost:4000/files`.
+The server listens on `PORT` (default 4001) and exposes the TUS path at `TUS_PATH` (default `/files`).
 
-## Env vars
+## Environment Configuration
 
-See `.env.example` for all options. Key settings:
+Copy `.env.example` to `.env` and update for your environment:
 
-- `TUS_STORAGE_DIR`: temp staging directory for uploads
-- `MAX_UPLOAD_SIZE_BYTES`: max allowed upload size
-- `MINIO_*`: MinIO connection and bucket settings
+```bash
+# Server
+PORT=4001
+HOST=0.0.0.0
+TUS_PATH=/files
+TUS_STORAGE_DIR=/var/tus/data
 
-## MinIO behavior
+# MinIO/S3 Settings
+MINIO_ENDPOINT=your-minio-host
+MINIO_PORT=9000
+MINIO_USE_SSL=true
+MINIO_ACCESS_KEY=your-access-key
+MINIO_SECRET_KEY=your-secret-key
+MINIO_BUCKET=wedocs
+```
 
-- Completed uploads stream from the local staging file to MinIO using `putObject`.
-- Object keys are `uploads/<uploadId>/<filename|uploadId>`.
-- After a successful stream, the local temp file and its `.info` metadata are deleted to free disk space.
-- If MinIO streaming fails, the TUS response still succeeds; add a retry worker later to re-stream.
+### Key Settings:
+- `TUS_STORAGE_DIR`: temporary staging directory for uploads (requires sufficient disk space)
+- `MAX_UPLOAD_SIZE_BYTES`: maximum allowed upload size (default 20GB)
+- `MINIO_*`: MinIO/S3 connection and bucket settings
 
-## Important rules (from architecture doc)
+## Production Deployment
 
-- TUS server performs no database writes.
-- Large file operations use streaming only.
-- Future eventing/batching can hook into the completion event handler.
+### Docker
+The server includes a `Dockerfile` for containerized deployment:
 
-## Health + debug
+```bash
+docker build -t tus-server:latest .
+docker run -p 4001:4001 \
+  -e MINIO_ENDPOINT=minio \
+  -e MINIO_PORT=9000 \
+  -e MINIO_ACCESS_KEY=your-key \
+  -e MINIO_SECRET_KEY=your-secret \
+  -e MINIO_BUCKET=wedocs \
+  -v /var/tus/data:/var/tus/data \
+  tus-server:latest
+```
 
-- `GET /health` returns `{ status: 'ok' }`.
-- `GET /debug/uploads` lists files currently in `TUS_STORAGE_DIR` (for local debugging only).
+### Docker Compose
+Configure in your docker-compose.yml:
 
-## Next steps (future work)
+```yaml
+services:
+  tus-server:
+    build: ./tus-server
+    ports:
+      - "4001:4001"
+    environment:
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: wedocs
+    volumes:
+      - tus-data:/var/tus/data
+    depends_on:
+      - minio
 
-- Emit RabbitMQ events on `POST_FINISH` for orchestration.
-- Add auth/tenant scoping and per-tenant buckets/prefixes.
-- Add cleanup job for stale partial uploads.
-- Add structured logging and metrics.
-- Add tests for the TUS pipeline and MinIO streaming.
+volumes:
+  tus-data:
+```
+
+## API Endpoints
+
+- `POST/PATCH ${TUS_PATH}/*` - TUS protocol endpoints
+- `GET /health` - Service health check (returns `{ status: 'ok' }`)
+- `GET /health/minio` - MinIO connectivity check
+- `GET /debug/failed-uploads` - List failed uploads (debug only)
+- `POST /debug/retry-upload/:uploadId` - Retry a failed upload (debug only)
+
+## MinIO Behavior
+
+- Completed uploads stream from local staging to MinIO using `putObject`
+- Object keys: `jobs/{jobId}/{stage}/{relativePath}`
+- After successful streaming, local temp files are deleted
+- If MinIO streaming fails, TUS response still succeeds; retry via debug endpoint or retry worker
+- Multipart uploads are supported with part tracking
+
+## Architecture Notes
+
+- TUS server performs **no database writes**
+- All large file operations use **streaming only**
+- Validation checks ensure MinIO configuration before startup
+- Proper type safety with environment variable validation
+- All localhost references removed for production compatibility
+
+## Health & Monitoring
+
+- `GET /health` - Basic health check
+- `GET /health/minio` - MinIO connection status
+- Structured logging with error context
+- Graceful handling of MinIO unavailability
+
+## Next Steps (Future Work)
+
+- Emit RabbitMQ events on `POST_FINISH` for orchestration
+- Add JWT auth and tenant scoping with per-tenant buckets
+- Add automatic cleanup job for stale partial uploads
+- Add Prometheus metrics and structured logging
+- Add comprehensive test suite for TUS pipeline and MinIO streaming

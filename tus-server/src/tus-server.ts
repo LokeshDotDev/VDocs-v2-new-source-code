@@ -107,7 +107,7 @@ export function createTusServer(): Server {
 		path: config.tusPath,
 		datastore,
 		respectForwardedHeaders: true,
-		maxSize: config.maxUploadSizeBytes,
+		maxSize: typeof config.maxUploadSizeBytes === 'string' ? parseInt(config.maxUploadSizeBytes, 10) : config.maxUploadSizeBytes,
 	});
 
 	tusServer.on(EVENTS.POST_FINISH, async (_req, _res, upload: Upload) => {

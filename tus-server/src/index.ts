@@ -2,11 +2,10 @@ import express, { Request, Response } from "express";
 import fs from "fs";
 import path from "path";
 import cors from "cors";
-import { 
-	createTusServer, 
-	getFailedUploads, 
-	getFailedUpload, 
-	retryFailedUpload 
+import {
+  createTusServer,
+  getFailedUploads,
+  retryFailedUpload
 } from "./tus-server.js";
 import { config } from "./config.js";
 import { logger } from "./logger.js";
@@ -15,192 +14,86 @@ import { checkMinIOHealth, ensureBucket } from "./minio-client.js";
 const app = express();
 const tusServer = createTusServer();
 
-// Enable CORS for all routes
+/**
+ * CORS – must support TUS headers
+ */
 app.use(cors({
-	origin: true,
-	credentials: true,
-	exposedHeaders: ['Tus-Resumable', 'Upload-Offset', 'Location', 'Upload-Complete']
+  origin: true,
+  credentials: true,
+  exposedHeaders: [
+    "Tus-Resumable",
+    "Upload-Offset",
+    "Upload-Length",
+    "Upload-Metadata",
+    "Location"
+  ]
 }));
 
-// Ensure storage directory exists
 fs.mkdirSync(config.storageDir, { recursive: true });
 
-// Health endpoint - MUST be before TUS handler
-app.get("/health", (_req: Request, res: Response) => {
-	res.json({ status: "ok" });
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok" });
 });
 
-// TUS endpoint
+/**
+ * TUS HANDLER
+ */
 app.all(`${config.tusPath}*`, async (req: Request, res: Response) => {
-	try {
-		await tusServer.handle(req, res);
-	} catch (error) {
-		const errorMessage = error instanceof Error ? error.message : String(error);
-		logger.error("TUS handler error", { 
-			error: errorMessage,
-			method: req.method,
-			path: req.path,
-		});
-		if (!res.headersSent) {
-			res.status(500).json({ 
-				error: "Internal server error",
-				message: errorMessage,
-			});
-		}
-	}
+  try {
+    await tusServer.handle(req, res);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error("TUS handler error", { msg, path: req.path });
+    if (!res.headersSent) {
+      res.status(500).json({ error: msg });
+    }
+  }
 });
 
-// MinIO health endpoint
-app.get("/health/minio", async (_req: Request, res: Response) => {
-	const isHealthy = await checkMinIOHealth();
-	res.status(isHealthy ? 200 : 503).json({
-		status: isHealthy ? "connected" : "disconnected",
-	});
+app.get("/health/minio", async (_req, res) => {
+  const ok = await checkMinIOHealth();
+  res.status(ok ? 200 : 503).json({ status: ok ? "connected" : "disconnected" });
 });
 
-// Static info endpoint for debugging
-app.get("/debug/uploads", (_req: Request, res: Response) => {
-	const files = fs.readdirSync(config.storageDir).map((name: string) => ({
-		name,
-		path: path.join(config.storageDir, name),
-		size: fs.existsSync(path.join(config.storageDir, name))
-			? fs.statSync(path.join(config.storageDir, name)).size
-			: 0,
-	}));
-	res.json({ files, count: files.length });
+app.get("/debug/failed-uploads", (_req, res) => {
+  res.json({ failedUploads: getFailedUploads() });
 });
 
-// Express JSON middleware for parsing request bodies
-app.use(express.json());
-
-// Failed uploads endpoint
-app.get("/debug/failed-uploads", (_req: Request, res: Response) => {
-	const failed = getFailedUploads();
-	res.json({ 
-		failedUploads: failed,
-		count: failed.length,
-	});
+app.post("/debug/retry-upload/:uploadId", async (req, res) => {
+  try {
+    await retryFailedUpload(req.params.uploadId);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
 });
 
-// Retry failed upload endpoint
-app.post("/debug/retry-upload/:uploadId", async (req: Request, res: Response) => {
-	try {
-		const { uploadId } = req.params;
-		await retryFailedUpload(uploadId);
-		res.json({ 
-			success: true, 
-			message: `Upload ${uploadId} retried successfully` 
-		});
-	} catch (error) {
-		const errorMessage = error instanceof Error ? error.message : String(error);
-		logger.error("Retry upload endpoint error", { error: errorMessage });
-		res.status(500).json({ 
-			success: false, 
-			error: errorMessage 
-		});
-	}
-});
+/**
+ * IMPORTANT FIX: bind to 0.0.0.0 for production
+ */
+const port = Number(config.port) || 4001;
+app.listen(port, "0.0.0.0", async () => {
+  logger.info("✅ TUS server started successfully", {
+    port,
+    path: config.tusPath,
+    tusEndpoint: `http://0.0.0.0:${port}${config.tusPath}`,
+    storageDir: config.storageDir,
+    environment: process.env.NODE_ENV || 'production'
+  });
 
-// Process pending uploads endpoint - manually trigger processing for files in storage
-app.post("/debug/process-pending", async (_req: Request, res: Response) => {
-	try {
-		const files = fs.readdirSync(config.storageDir);
-		// Filter for actual upload files (not metadata files)
-		const pendingFiles = files.filter(
-			(name: string) => 
-				!name.endsWith('.json') && 
-				!name.endsWith('.info') && 
-				!name.endsWith('.uploaded') && 
-				!name.startsWith('assembled-') &&
-				fs.statSync(path.join(config.storageDir, name)).isFile()
-		);
-
-		logger.info(`Found ${pendingFiles.length} pending upload files to process`);
-
-		const results = [];
-		for (const uploadId of pendingFiles) {
-			try {
-				const filePath = path.join(config.storageDir, uploadId);
-				const infoPath = `${filePath}.info`;
-				
-				// Try to read metadata from .info file (FileStore format)
-				let metadata: Record<string, string> = {};
-				if (fs.existsSync(infoPath)) {
-					try {
-						const infoContent = fs.readFileSync(infoPath, 'utf8');
-						const uploadInfo = JSON.parse(infoContent);
-						metadata = uploadInfo.metadata || {};
-					} catch (e) {
-						logger.warn(`Could not parse metadata for ${uploadId}, using defaults`);
-					}
-				}
-
-				// Create a mock Upload object
-				const mockUpload = {
-					id: uploadId,
-					metadata: metadata,
-				} as any;
-
-				// Import the handler function
-				const tusServerModule = await import('./tus-server.js');
-				
-				// Process the upload
-				await tusServerModule.handleSingleFileUpload(mockUpload, filePath, metadata);
-				
-				results.push({ uploadId, status: 'success', filename: metadata.filename || uploadId });
-				logger.info(`Successfully processed ${uploadId}`);
-			} catch (error) {
-				const errorMessage = error instanceof Error ? error.message : String(error);
-				logger.error(`Failed to process ${uploadId}`, { error: errorMessage });
-				results.push({ uploadId, status: 'error', error: errorMessage });
-			}
-		}
-
-		const successCount = results.filter(r => r.status === 'success').length;
-		const failCount = results.filter(r => r.status === 'error').length;
-
-		logger.info(`Processed ${successCount} successfully, ${failCount} failed`);
-
-		res.json({
-			success: true,
-			processed: successCount,
-			failed: failCount,
-			total: pendingFiles.length,
-			results,
-		});
-	} catch (error) {
-		const errorMessage = error instanceof Error ? error.message : String(error);
-		logger.error("Process pending uploads error", { error: errorMessage });
-		res.status(500).json({
-			success: false,
-			error: errorMessage,
-		});
-	}
-});
-
-app.listen(config.port, async () => {
-	logger.info(
-		`TUS server listening on http://localhost:${config.port}${config.tusPath}`
-	);
-	logger.info(`MinIO config:`, {
-		endpoint: `${config.minio.endpoint}:${config.minio.port}`,
-		bucket: config.minio.bucket,
-		useSSL: config.minio.useSSL,
-	});
-	const minioOk = await checkMinIOHealth();
-	if (!minioOk) {
-		logger.error(
-			`WARNING: MinIO is not reachable. Files will stay in .data/tus/`
-		);
-	}
-
-	// Ensure bucket exists
-	try {
-		await ensureBucket();
-		logger.info(`✅ MinIO bucket ready: ${config.minio.bucket}`);
-	} catch (err) {
-		logger.error("❌ Failed to ensure MinIO bucket", { 
-			error: err instanceof Error ? err.message : String(err) 
-		});
-	}
+  // Check MinIO connectivity
+  try {
+    const minioOk = await checkMinIOHealth();
+    if (minioOk) {
+      logger.info("✅ MinIO connection verified");
+      await ensureBucket();
+      logger.info(`✅ MinIO bucket '${config.minio.bucket}' is ready`);
+    } else {
+      logger.warn("⚠️ MinIO is unreachable - uploads will fail until MinIO is available");
+    }
+  } catch (error) {
+    logger.error("❌ Failed to initialize MinIO", { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
+  }
 });

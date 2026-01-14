@@ -4,6 +4,26 @@ import path from "path";
 import { config } from "./config.js";
 import { logger } from "./logger.js";
 
+// Validate MinIO configuration
+if (!config.minio.endpoint) {
+	throw new Error('MINIO_ENDPOINT is required');
+}
+if (!config.minio.port) {
+	throw new Error('MINIO_PORT is required');
+}
+if (config.minio.useSSL === undefined) {
+	throw new Error('MINIO_USE_SSL is required');
+}
+if (!config.minio.accessKey) {
+	throw new Error('MINIO_ACCESS_KEY is required');
+}
+if (!config.minio.secretKey) {
+	throw new Error('MINIO_SECRET_KEY is required');
+}
+if (!config.minio.bucket) {
+	throw new Error('MINIO_BUCKET is required');
+}
+
 export const minioClient = new Client({
 	endPoint: config.minio.endpoint,
 	port: config.minio.port,
