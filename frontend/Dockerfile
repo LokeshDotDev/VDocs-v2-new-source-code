@@ -8,16 +8,16 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install all dependencies (including devDependencies)
+# Install all deps (including dev)
 RUN npm ci
 
-# Copy source code
+# Copy source
 COPY . .
 
-# Generate Prisma client (with correct binary target)
+# Generate Prisma client
 RUN npx prisma generate
 
-# Build the Next.js application
+# Build Next.js
 RUN npm run build
 
 
@@ -26,36 +26,33 @@ RUN npm run build
 # ========================
 FROM node:20-bookworm-slim AS production
 
-# Create non-root user
-RUN addgroup -g 1001 nodejs && \
-    adduser -u 1001 -G nodejs -s /bin/sh -D nextjs
+# Create non-root user (Debian-compatible)
+RUN groupadd -g 1001 nodejs && \
+    useradd -u 1001 -g nodejs -m -s /bin/bash nextjs
 
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
 
-# Install only production dependencies
+# Install only prod deps
 RUN npm ci --only=production && npm cache clean --force
 
-# Copy Next.js build output
+# Copy build output
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 
-# 🔥 IMPORTANT: Copy Prisma runtime engines
+# 🔥 Prisma runtime engines (CRITICAL)
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
-# Fix permissions
+# Permissions
 RUN chown -R nextjs:nodejs /app
 
 USER nextjs
 
-# Expose port
 EXPOSE 3001
-
 ENV NODE_ENV=production
 ENV PORT=3001
 
-# Start Next.js
 CMD ["npm", "start"]
