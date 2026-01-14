@@ -43,6 +43,8 @@ router.post('/upload', async (req: Request, res: Response) => {
   }
 });
 // Called by TUS or frontend after each file upload
+
+// Enhanced upload-complete handler: triggers Reductor when all files uploaded
 router.post('/upload-complete', async (req: Request, res: Response) => {
   try {
     const { jobId, fileKey } = req.body;
@@ -55,12 +57,61 @@ router.post('/upload-complete', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Job not found' });
     }
     logger.info({ jobId, uploadedFiles: job.uploadedFiles, expectedFiles: job.expectedFiles, status: job.status }, '[one-click/upload-complete] File upload recorded');
+
+    // If all files uploaded, set to processing and trigger Reductor in background
+    if (job.uploadedFiles === job.expectedFiles) {
+      jobService.updateJobStatus(jobId, 'processing');
+      void startJobProcessing(jobId);
+    }
+
     res.json({ jobId, uploadedFiles: job.uploadedFiles, expectedFiles: job.expectedFiles, status: job.status });
   } catch (error) {
     logger.error({ error }, '[one-click/upload-complete] Error');
     res.status(500).json({ error: 'Failed to record upload completion' });
   }
 });
+
+// --- Reductor trigger logic ---
+import fetch from 'node-fetch';
+const REDUCTOR_URL = 'http://vdocs-reductor-service:5018/process';
+
+async function startJobProcessing(jobId: string) {
+  const job = jobService.getJob(jobId);
+  if (!job) {
+    logger.error({ jobId }, '[startJobProcessing] Job not found');
+    return;
+  }
+  const payload = { jobId, rawFiles: job.rawFiles };
+  let lastError: string | null = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const resp = await fetch(REDUCTOR_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (resp.ok) {
+        logger.info({ jobId, attempt, status: resp.status }, '[startJobProcessing] Reductor triggered successfully');
+        return;
+      } else {
+        const errorText = await resp.text();
+        logger.error({ jobId, attempt, status: resp.status, error: errorText }, '[startJobProcessing] Reductor call failed');
+        lastError = errorText;
+      }
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      logger.error({ jobId, attempt, error: lastError }, '[startJobProcessing] Reductor call error');
+      if (attempt === 1) await new Promise(res => setTimeout(res, 1000));
+    }
+  }
+  // All attempts failed
+  jobService.updateJobStatus(jobId, 'failed', { errorMessage: lastError || 'Reductor call failed' });
+  logger.error({ jobId, error: lastError }, '[startJobProcessing] Reductor call failed after retries, job marked as failed');
+}
 
 /**
  * Notify backend that a file upload is complete (called by TUS server)
