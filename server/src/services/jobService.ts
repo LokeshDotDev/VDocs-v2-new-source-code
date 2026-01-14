@@ -3,7 +3,9 @@ import logger from '../lib/logger.js';
 export interface Job {
   jobId: string;
   createdAt: Date;
-  status: 'created' | 'uploading' | 'processing' | 'completed' | 'failed';
+  status: 'uploading' | 'uploaded' | 'processing' | 'completed' | 'failed';
+  expectedFiles: number;
+  uploadedFiles: number;
   fileCount: number;
   rawFiles: string[];
   anonymizedFiles: string[];
@@ -20,19 +22,46 @@ class JobService {
   /**
    * Create a new job
    */
-  createJob(): Job {
+  createJob(expectedFiles: number): Job {
     const jobId = `job-${new Date().toISOString().split('T')[0]}-${Date.now()}`;
     const job: Job = {
       jobId,
       createdAt: new Date(),
-      status: 'created',
+      status: 'uploading',
+      expectedFiles,
+      uploadedFiles: 0,
       fileCount: 0,
       rawFiles: [],
       anonymizedFiles: [],
       humanizedFiles: [],
     };
     this.jobs.set(jobId, job);
-    logger.info({ jobId }, '[jobService] Job created');
+    logger.info({ jobId, expectedFiles }, '[jobService] Job created');
+    return job;
+  }
+  /**
+   * Increment uploadedFiles for a job. Returns updated job.
+   */
+  incrementUploadedFiles(jobId: string): Job | undefined {
+    const job = this.jobs.get(jobId);
+    if (!job) return undefined;
+    job.uploadedFiles = (job.uploadedFiles || 0) + 1;
+    logger.info({ jobId, uploadedFiles: job.uploadedFiles, expectedFiles: job.expectedFiles }, '[jobService] Uploaded file incremented');
+    if (job.uploadedFiles === job.expectedFiles) {
+      job.status = 'uploaded';
+      logger.info({ jobId }, '[jobService] All files uploaded, status set to uploaded');
+    }
+    return job;
+  }
+
+  /**
+   * Set expectedFiles for a job (if needed)
+   */
+  setExpectedFiles(jobId: string, expectedFiles: number): Job | undefined {
+    const job = this.jobs.get(jobId);
+    if (!job) return undefined;
+    job.expectedFiles = expectedFiles;
+    logger.info({ jobId, expectedFiles }, '[jobService] expectedFiles set');
     return job;
   }
 

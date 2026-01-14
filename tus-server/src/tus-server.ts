@@ -103,6 +103,7 @@ setInterval(() => {
 export function createTusServer(): Server {
 	const datastore = new FileStore({ directory: config.storageDir });
 
+
 	const tusServer = new Server({
 		path: config.tusPath,
 		datastore,
@@ -162,6 +163,27 @@ export function createTusServer(): Server {
 
 			// Handle single file upload
 			await handleSingleFileUpload(upload, filePath, cleanMetadata);
+
+			// Notify backend that a file upload is complete
+			const jobId = cleanMetadata.jobId;
+			if (jobId) {
+				const backendUrl = process.env.ONE_CLICK_BACKEND_URL || process.env.BACKEND_URL || "http://server:4000";
+				const notifyUrl = `${backendUrl}/api/one-click/upload-complete`;
+				try {
+					const resp = await fetch(notifyUrl, {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ jobId }),
+					});
+					if (!resp.ok) {
+						logger.warn("Failed to notify backend of upload completion", { jobId, status: resp.status });
+					} else {
+						logger.info("Notified backend of upload completion", { jobId });
+					}
+				} catch (err) {
+					logger.error("Error notifying backend of upload completion", { jobId, error: err instanceof Error ? err.message : String(err) });
+				}
+			}
 		} catch (error) {
 			// Track failed uploads for potential retry
 			const errorMessage = error instanceof Error ? error.message : String(error);
