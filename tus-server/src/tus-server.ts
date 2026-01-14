@@ -227,17 +227,10 @@ export function createTusServer(): Server {
 
 						if (!notified) {
 							logger.error("❌ All backend notification attempts failed", {
-										// Notify backend of upload completion (reliable, production-safe)
-										const jobId = cleanMetadata.jobId;
-										const stage = cleanMetadata.stage || "raw";
-										const filename = cleanMetadata.filename || upload.id;
-										const relativePath = cleanMetadata.relativePath || filename;
-										const objectKey = buildObjectKey({
-											jobId,
-											stage,
-											relativePath,
-										});
-										const fileKey = objectKey;
+								jobId,
+								fileKey,
+								filename,
+								error: lastError?.message,
 							});
 							// Do NOT throw — allow upload to complete
 						}
