@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 
-/**
- * Grammar / Spell Checker Service URL
- * Must be provided via environment variables in production
- */
-const GRAMMAR_API = process.env.AI_DETECTOR_MODULE_URL;
-
-if (!GRAMMAR_API) {
-	throw new Error("AI_DETECTOR_MODULE_URL is not set");
-}
-
 export async function POST(request: NextRequest) {
+	const GRAMMAR_API = process.env.AI_DETECTOR_MODULE_URL;
+
+	if (!GRAMMAR_API) {
+		console.error("[Grammar] AI_DETECTOR_MODULE_URL is not set");
+		return NextResponse.json(
+			{ error: "Grammar service not configured" },
+			{ status: 500 }
+		);
+	}
+
 	try {
 		const { text } = await request.json();
 
@@ -25,17 +25,13 @@ export async function POST(request: NextRequest) {
 		console.log(`[Grammar] Text length: ${text.length} chars`);
 
 		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+		const timeoutId = setTimeout(() => controller.abort(), 30000);
 
 		try {
 			const response = await fetch(`${GRAMMAR_API}/check`, {
 				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify({
-					text: text.trim(),
-				}),
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ text: text.trim() }),
 				signal: controller.signal,
 			});
 
@@ -52,8 +48,6 @@ export async function POST(request: NextRequest) {
 
 			const result = await response.json();
 
-			console.log("[Grammar] Success");
-
 			return NextResponse.json({
 				success: true,
 				correctedText: result.corrected_text ?? result.text,
@@ -62,7 +56,6 @@ export async function POST(request: NextRequest) {
 			clearTimeout(timeoutId);
 
 			if (err instanceof Error && err.name === "AbortError") {
-				console.error("[Grammar] Request timeout");
 				throw new Error("Grammar service timeout (30s)");
 			}
 
@@ -77,7 +70,6 @@ export async function POST(request: NextRequest) {
 					error instanceof Error
 						? error.message
 						: "Grammar check failed",
-				service: GRAMMAR_API,
 			},
 			{ status: 500 }
 		);
