@@ -121,70 +121,48 @@ async function startJobProcessing(jobId: string) {
     return;
   }
 
-  const payload = {
-    jobId,
-    rawFiles: job.rawFiles,
-  };
+  const REDUCTOR_BASE_URL = process.env.REDUCTOR_V2_MODULE_URL || 'http://vdocs-reductor-service-f4mqw1:5018';
+  logger.info({ jobId, REDUCTOR_BASE_URL }, '[startJobProcessing] Resolved Reductor URL');
 
-  logger.info(
-    { jobId, rawFiles: job.rawFiles.length, REDUCTOR_URL },
-    '[startJobProcessing] Calling Reductor'
-  );
-
-  let lastError: string | null = null;
-
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
-
-      const resp = await fetch(REDUCTOR_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeout);
-
-      if (resp.ok) {
-        logger.info(
-          { jobId, attempt },
-          '[startJobProcessing] Reductor triggered successfully'
-        );
-        return;
-      }
-
-      const text = await resp.text();
-      lastError = text;
-
-      logger.error(
-        { jobId, attempt, status: resp.status, text },
-        '[startJobProcessing] Reductor error'
-      );
-    } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err);
-
-      logger.error(
-        { jobId, attempt, error: lastError },
-        '[startJobProcessing] Fetch failed'
-      );
-
-      if (attempt === 1) {
-        await new Promise((r) => setTimeout(r, 1000));
+  for (const fileKey of job.rawFiles) {
+    const payload = {
+      bucket: 'wedocs',
+      object_key: fileKey,
+    };
+    let lastError: string | null = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        const resp = await fetch(`${REDUCTOR_BASE_URL}/anonymize`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        if (resp.ok) {
+          logger.info({ jobId, fileKey, attempt, status: resp.status }, '[startJobProcessing] Reductor /anonymize success');
+          break;
+        } else {
+          const errorText = await resp.text();
+          logger.error({ jobId, fileKey, attempt, status: resp.status, error: errorText }, '[startJobProcessing] Reductor /anonymize failed');
+          lastError = errorText;
+        }
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
+        logger.error({ jobId, fileKey, attempt, error: lastError }, '[startJobProcessing] Reductor /anonymize error');
+        if (attempt === 1) await new Promise(res => setTimeout(res, 1000));
       }
     }
+    if (lastError) {
+      jobService.updateJobStatus(jobId, 'failed', { errorMessage: lastError });
+      logger.error({ jobId, fileKey, error: lastError }, '[startJobProcessing] Reductor /anonymize failed after retries');
+      return;
+    }
   }
-
-  // ❌ All retries failed
-  jobService.updateJobStatus(jobId, 'failed', {
-    errorMessage: lastError || 'Reductor failed',
-  });
-
-  logger.error(
-    { jobId, error: lastError },
-    '[startJobProcessing] Job marked as failed'
-  );
+  jobService.updateJobStatus(jobId, 'completed');
+  logger.info({ jobId }, '[startJobProcessing] All files processed, job marked completed');
 }
 
 /**
