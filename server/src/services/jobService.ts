@@ -121,18 +121,7 @@ class JobService {
     logger.debug({ jobId, fileKey }, '[jobService] Raw file added');
     return job;
   }
-  // Increment uploadedFiles, auto-transition to 'uploaded' if complete
-  incrementUploadedFiles(jobId: string): Job | undefined {
-    const job = this.jobs.get(jobId);
-    if (!job) return undefined;
-    job.uploadedFiles = (job.uploadedFiles || 0) + 1;
-    logger.info({ jobId, uploadedFiles: job.uploadedFiles, expectedFiles: job.expectedFiles }, '[jobService] Uploaded file incremented');
-    if (job.uploadedFiles === job.expectedFiles) {
-      job.status = 'uploaded';
-      logger.info({ jobId }, '[jobService] All files uploaded, status set to uploaded');
-    }
-    return job;
-  }
+  // ...existing code...
 
   /**
    * Add anonymized file to job

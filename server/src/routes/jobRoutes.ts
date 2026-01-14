@@ -9,9 +9,14 @@ const router = Router();
  * POST /api/jobs/create
  * Returns: { jobId, status, createdAt }
  */
+// You must provide expectedFiles for job creation
 router.post('/create', (req, res) => {
   try {
-    const job = jobService.createJob();
+    const { expectedFiles } = req.body;
+    if (!expectedFiles || typeof expectedFiles !== 'number' || expectedFiles <= 0) {
+      return res.status(400).json({ error: 'expectedFiles is required and must be a positive number' });
+    }
+    const job = jobService.createJob(expectedFiles);
     res.json({
       jobId: job.jobId,
       status: job.status,
