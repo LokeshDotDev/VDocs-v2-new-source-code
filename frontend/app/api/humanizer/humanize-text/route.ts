@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const HUMANIZER_API = process.env.HUMANIZER_API || "http://localhost:8000";
+const HUMANIZER_API = process.env.HUMANIZER_MODULE_URL;
+
+if (!HUMANIZER_API) {
+	throw new Error("HUMANIZER_MODULE_URL is not set");
+}
 
 export async function POST(request: NextRequest) {
 	try {
@@ -16,19 +20,18 @@ export async function POST(request: NextRequest) {
 		console.log(`[Humanizer] Calling ${HUMANIZER_API}/humanize`);
 		console.log(`[Humanizer] Text length: ${text.length} chars`);
 
-		// Call the Python humanizer module
 		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+		const timeoutId = setTimeout(() => controller.abort(), 30000);
 
 		try {
 			const response = await fetch(`${HUMANIZER_API}/humanize`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ 
+				body: JSON.stringify({
 					text: text.trim(),
-					p_syn: 0.35,      // Lower synonym replacement (35% instead of 95%)
-					p_trans: 0.30,    // Lower transition insertion (30% instead of 70%)
-					preserve_linebreaks: true
+					p_syn: 0.35,
+					p_trans: 0.30,
+					preserve_linebreaks: true,
 				}),
 				signal: controller.signal,
 			});
@@ -38,37 +41,33 @@ export async function POST(request: NextRequest) {
 			if (!response.ok) {
 				const errorText = await response.text();
 				console.error(
-					`[Humanizer] Service error: ${response.status} ${response.statusText}`,
+					`[Humanizer] Service error: ${response.status}`,
 					errorText
 				);
-				throw new Error(
-					`Humanizer service error: ${response.status} ${response.statusText}`
-				);
+				throw new Error(`Humanizer service error: ${response.status}`);
 			}
 
 			const result = await response.json();
-			console.log("[Humanizer] Success");
 
 			return NextResponse.json({
 				success: true,
 				humanizedText: result.humanized_text || result.text,
 			});
-		} catch (fetchError) {
+		} catch (err: any) {
 			clearTimeout(timeoutId);
-			if (fetchError instanceof Error && fetchError.name === "AbortError") {
-				console.error("[Humanizer] Request timeout");
+			if (err.name === "AbortError") {
 				throw new Error("Humanizer service timeout (30s)");
 			}
-			throw fetchError;
+			throw err;
 		}
 	} catch (error) {
-		const errorMsg =
-			error instanceof Error ? error.message : "Humanization failed";
-		console.error("[Humanizer] Error:", errorMsg, error);
+		console.error("[Humanizer] Error:", error);
 		return NextResponse.json(
 			{
-				error: errorMsg,
-				service: HUMANIZER_API,
+				error:
+					error instanceof Error
+						? error.message
+						: "Humanization failed",
 			},
 			{ status: 500 }
 		);
