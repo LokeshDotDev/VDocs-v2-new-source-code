@@ -6,7 +6,7 @@ export interface Job {
   status: 'uploading' | 'uploaded' | 'processing' | 'completed' | 'failed';
   expectedFiles: number;
   uploadedFiles: number;
-  fileCount: number;
+  fileCount: number; // always equals expectedFiles
   rawFiles: string[];
   anonymizedFiles: string[];
   humanizedFiles: string[];
@@ -22,6 +22,7 @@ class JobService {
   /**
    * Create a new job
    */
+  // Create a new job with expectedFiles
   createJob(expectedFiles: number): Job {
     const jobId = `job-${new Date().toISOString().split('T')[0]}-${Date.now()}`;
     const job: Job = {
@@ -30,7 +31,7 @@ class JobService {
       status: 'uploading',
       expectedFiles,
       uploadedFiles: 0,
-      fileCount: 0,
+      fileCount: expectedFiles,
       rawFiles: [],
       anonymizedFiles: [],
       humanizedFiles: [],
@@ -110,16 +111,26 @@ class JobService {
   /**
    * Add raw file to job
    */
+  // Add a raw file to job (does not affect status)
   addRawFile(jobId: string, fileKey: string): Job | undefined {
     const job = this.jobs.get(jobId);
     if (!job) return undefined;
-
     if (!job.rawFiles.includes(fileKey)) {
       job.rawFiles.push(fileKey);
-      job.fileCount = job.rawFiles.length;
     }
-
     logger.debug({ jobId, fileKey }, '[jobService] Raw file added');
+    return job;
+  }
+  // Increment uploadedFiles, auto-transition to 'uploaded' if complete
+  incrementUploadedFiles(jobId: string): Job | undefined {
+    const job = this.jobs.get(jobId);
+    if (!job) return undefined;
+    job.uploadedFiles = (job.uploadedFiles || 0) + 1;
+    logger.info({ jobId, uploadedFiles: job.uploadedFiles, expectedFiles: job.expectedFiles }, '[jobService] Uploaded file incremented');
+    if (job.uploadedFiles === job.expectedFiles) {
+      job.status = 'uploaded';
+      logger.info({ jobId }, '[jobService] All files uploaded, status set to uploaded');
+    }
     return job;
   }
 
