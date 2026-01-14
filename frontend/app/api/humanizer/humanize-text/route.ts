@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const HUMANIZER_API = process.env.HUMANIZER_MODULE_URL;
-
-if (!HUMANIZER_API) {
-	throw new Error("HUMANIZER_MODULE_URL is not set");
-}
-
 export async function POST(request: NextRequest) {
 	try {
+		const HUMANIZER_API = process.env.HUMANIZER_MODULE_URL;
+
+		if (!HUMANIZER_API) {
+			return NextResponse.json(
+				{ error: "Humanizer service is not configured" },
+				{ status: 500 }
+			);
+		}
+
 		const { text } = await request.json();
 
 		if (!text || typeof text !== "string" || text.trim().length === 0) {
@@ -16,9 +19,6 @@ export async function POST(request: NextRequest) {
 				{ status: 400 }
 			);
 		}
-
-		console.log(`[Humanizer] Calling ${HUMANIZER_API}/humanize`);
-		console.log(`[Humanizer] Text length: ${text.length} chars`);
 
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -40,10 +40,7 @@ export async function POST(request: NextRequest) {
 
 			if (!response.ok) {
 				const errorText = await response.text();
-				console.error(
-					`[Humanizer] Service error: ${response.status}`,
-					errorText
-				);
+				console.error("[Humanizer] Service error:", errorText);
 				throw new Error(`Humanizer service error: ${response.status}`);
 			}
 
