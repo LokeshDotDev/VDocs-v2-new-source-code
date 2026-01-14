@@ -72,7 +72,6 @@ router.post('/upload-complete', async (req: Request, res: Response) => {
 });
 
 // --- Reductor trigger logic ---
-import fetch from 'node-fetch';
 const REDUCTOR_URL = 'http://vdocs-reductor-service:5018/process';
 
 async function startJobProcessing(jobId: string) {
