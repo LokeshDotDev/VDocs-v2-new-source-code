@@ -17,6 +17,7 @@ export const config = {
   port: Number(envVars.PORT) || 4001,
   tusPath: envVars.TUS_PATH || "/files",
   storageDir: envVars.TUS_STORAGE_DIR || ".data/tus",
+  publicBaseUrl: process.env.PUBLIC_BASE_URL!,
   maxUploadSizeBytes: Number(envVars.MAX_UPLOAD_SIZE_BYTES) || 50 * 1024 * 1024 * 1024,
   minio: {
     endpoint: getRequiredEnv('MINIO_ENDPOINT'),
