@@ -7,7 +7,6 @@ const router = Router();
 const TUS_PUBLIC_ENDPOINT =
   process.env.TUS_PUBLIC_ENDPOINT ||
   process.env.TUS_INTERNAL_ENDPOINT ||
-  process.env.TUS_SERVER_URL ||
   'http://localhost:4001';
 
 /**
