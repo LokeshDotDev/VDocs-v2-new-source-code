@@ -4,7 +4,11 @@ import logger from '../lib/logger.js';
 
 const router = Router();
 
-const TUS_SERVER_URL = process.env['TUS_SERVER_URL'] || 'http://localhost:4001';
+const TUS_PUBLIC_ENDPOINT =
+  process.env.TUS_PUBLIC_ENDPOINT ||
+  process.env.TUS_INTERNAL_ENDPOINT ||
+  process.env.TUS_SERVER_URL ||
+  'http://localhost:4001';
 
 /**
  * Initialize one-click upload
