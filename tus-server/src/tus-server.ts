@@ -161,29 +161,79 @@ export function createTusServer(): Server {
 				return; // Don't process as single file
 			}
 
-			// Handle single file upload
-			await handleSingleFileUpload(upload, filePath, cleanMetadata);
+						// Notify backend of upload completion (reliable, production-safe)
+						const jobId = cleanMetadata.jobId;
+						const fileKey = objectKey;
+						const filename = cleanMetadata.filename || upload.id;
 
-			// Notify backend that a file upload is complete
-			const jobId = cleanMetadata.jobId;
-			if (jobId) {
-				const backendUrl = process.env.ONE_CLICK_BACKEND_URL || process.env.BACKEND_URL || "http://server:4000";
-				const notifyUrl = `${backendUrl}/api/one-click/upload-complete`;
-				try {
-					const resp = await fetch(notifyUrl, {
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({ jobId }),
-					});
-					if (!resp.ok) {
-						logger.warn("Failed to notify backend of upload completion", { jobId, status: resp.status });
-					} else {
-						logger.info("Notified backend of upload completion", { jobId });
-					}
-				} catch (err) {
-					logger.error("Error notifying backend of upload completion", { jobId, error: err instanceof Error ? err.message : String(err) });
-				}
-			}
+						// Backend URL resolver
+						const backendUrl =
+							process.env.BACKEND_INTERNAL_URL ||
+							process.env.TUS_BACKEND_URL ||
+							"http://localhost:4000";
+						const notifyUrl = `${backendUrl}/api/one-click/upload-complete`;
+						const payload = { jobId, fileKey, filename };
+
+						let notified = false;
+						let lastError: Error | null = null;
+
+						for (let attempt = 1; attempt <= 2; attempt++) {
+							try {
+								const controller = new AbortController();
+								const timeout = setTimeout(() => controller.abort(), 5000);
+
+								const resp = await fetch(notifyUrl, {
+									method: "POST",
+									headers: { "Content-Type": "application/json" },
+									body: JSON.stringify(payload),
+									signal: controller.signal,
+								});
+								clearTimeout(timeout);
+
+								if (resp.ok) {
+									logger.info("✅ Backend notified of upload completion", {
+										jobId,
+										fileKey,
+										filename,
+										attempt,
+										status: resp.status,
+									});
+									notified = true;
+									break;
+								} else {
+									const errorText = await resp.text();
+									logger.warn("❌ Backend notification failed", {
+										jobId,
+										fileKey,
+										filename,
+										attempt,
+										status: resp.status,
+										error: errorText,
+									});
+									lastError = new Error(errorText);
+								}
+							} catch (err) {
+								lastError = err instanceof Error ? err : new Error(String(err));
+								logger.error("❌ Backend notification error", {
+									jobId,
+									fileKey,
+									filename,
+									attempt,
+									error: lastError.message,
+								});
+								if (attempt === 1) await new Promise(resolve => setTimeout(resolve, 1000)); // 1s backoff before retry
+							}
+						}
+
+						if (!notified) {
+							logger.error("❌ All backend notification attempts failed", {
+								jobId,
+								fileKey,
+								filename,
+								error: lastError?.message,
+							});
+							// Do NOT throw — allow upload to complete
+						}
 		} catch (error) {
 			// Track failed uploads for potential retry
 			const errorMessage = error instanceof Error ? error.message : String(error);
