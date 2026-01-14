@@ -163,8 +163,15 @@ export function createTusServer(): Server {
 
 						// Notify backend of upload completion (reliable, production-safe)
 						const jobId = cleanMetadata.jobId;
-						const fileKey = objectKey;
+						const stage = cleanMetadata.stage || "raw";
 						const filename = cleanMetadata.filename || upload.id;
+						const relativePath = cleanMetadata.relativePath || filename;
+						const objectKey = buildObjectKey({
+							jobId,
+							stage,
+							relativePath,
+						});
+						const fileKey = objectKey;
 
 						// Backend URL resolver
 						const backendUrl =
