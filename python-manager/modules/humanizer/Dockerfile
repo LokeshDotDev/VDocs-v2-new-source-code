@@ -13,7 +13,15 @@ RUN apt-get update && apt-get install -y \
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && \
-    python -m nltk.downloader punkt averaged_perceptron_tagger wordnet punkt_tab averaged_perceptron_tagger_eng
+    python - <<EOF
+import nltk
+nltk.download("punkt", quiet=True)
+nltk.download("averaged_perceptron_tagger", quiet=True)
+nltk.download("wordnet", quiet=True)
+nltk.download("punkt_tab", quiet=True)
+nltk.download("averaged_perceptron_tagger_eng", quiet=True)
+EOF
+
 
 # Download spaCy model
 RUN python -m spacy download en_core_web_sm
