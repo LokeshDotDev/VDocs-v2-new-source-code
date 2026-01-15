@@ -16,7 +16,7 @@ import {
   getFullFilePath
 } from '@/lib/upload/services/tus-file-operations';
 import { TusMultipartManager } from '@/lib/upload/services/tus-multipart-manager';
-import { minioClient } from '@/lib/minioClient';
+import { getMinioClient } from "@/lib/minioClient";
 
 // Initialize directories
 ensureDir(TUS_SERVER_CONFIG.stagingDir);

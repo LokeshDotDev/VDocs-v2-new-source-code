@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { minioClient } from "@/lib/minioClient";
+import { getMinioClient } from "@/lib/minioClient";
 
 export async function GET(request: NextRequest) {
   try {
