@@ -1,8 +1,10 @@
+export const runtime = "nodejs";
+
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import os from "os";
-import minioClient from "@/lib/minioClient";
+import { minioClient } from "@/lib/minioClient";
 
 // Adjust these paths as needed
 const DOCX_DIR = process.env.DOCX_STORAGE_PATH || path.join(process.cwd(), "public", "uploads", "docx");
