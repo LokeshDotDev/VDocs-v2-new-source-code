@@ -1,11 +1,12 @@
 import { Client } from "minio";
 
-const minioClient = new Client({
-  endPoint: process.env.MINIO_ENDPOINT || "localhost",
-  port: parseInt(process.env.MINIO_PORT || "9000", 10),
-  useSSL: process.env.MINIO_USE_SSL === "true",
-  accessKey: process.env.MINIO_ACCESS_KEY || "minioadmin",
-  secretKey: process.env.MINIO_SECRET_KEY || "minioadmin",
-});
+if (!process.env.MINIO_ENDPOINT) throw new Error("MINIO_ENDPOINT missing");
 
-export default minioClient;
+export const minioClient = new Client({
+  endPoint: process.env.MINIO_ENDPOINT,
+  port: Number(process.env.MINIO_PORT || 443),
+  useSSL: process.env.MINIO_USE_SSL === "true",
+  accessKey: process.env.MINIO_ACCESS_KEY!,
+  secretKey: process.env.MINIO_SECRET_KEY!,
+  pathStyle: true, 
+});
