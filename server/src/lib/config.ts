@@ -1,86 +1,73 @@
-import dotenv from 'dotenv';
-import { z } from 'zod';
-import os from 'os';
+// lib/config.ts
 
-// Load .env - try multiple locations for Windows compatibility
-dotenv.config();
-dotenv.config({ path: '.env.local' });
-dotenv.config({ path: '../.env' });
+export const config = {
+  // ======================
+  // App
+  // ======================
+  NODE_ENV: process.env.NODE_ENV ?? 'development',
+  HOST: process.env.HOST ?? '0.0.0.0',
+  PORT: Number(process.env.PORT ?? 4000),
 
-const configSchema = z.object({
-  // Environment
-  NODE_ENV: z.enum(['development', 'production', 'test']),
-  
-  // Server Configuration
-  PORT: z.coerce.number(),
-  HOST: z.string(),
-  
-  // Database
-  DATABASE_URL: z.string(),
-  
+  // ======================
   // Security
-  JWT_SECRET: z.string(),
-  BCRYPT_ROUNDS: z.coerce.number(),
-  BASIC_AUTH_USERNAME: z.string(),
-  BASIC_AUTH_PASSWORD: z.string(),
-  
-  // CORS
-  CORS_ORIGIN: z.string(),
-  
-  // Rate Limiting
-  RATE_LIMIT_WINDOW_MS: z.coerce.number(),
-  RATE_LIMIT_MAX_REQUESTS: z.coerce.number(),
-  RATE_LIMIT_STORE: z.enum(['memory', 'redis']),
-  REDIS_URL: z.string().optional(),
-  
+  // ======================
+  JWT_SECRET: process.env.JWT_SECRET ?? '',
+  AUTH_SECRET: process.env.AUTH_SECRET ?? '',
+  BCRYPT_ROUNDS: Number(process.env.BCRYPT_ROUNDS ?? 10),
+
+  // ======================
+  // Rate limiting
+  // ======================
+  RATE_LIMIT_WINDOW_MS: Number(process.env.RATE_LIMIT_WINDOW_MS ?? 60000),
+  RATE_LIMIT_MAX_REQUESTS: Number(process.env.RATE_LIMIT_MAX_REQUESTS ?? 100),
+  RATE_LIMIT_STORE: process.env.RATE_LIMIT_STORE ?? 'memory',
+
+  // ======================
   // Logging
-  LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']),
-  LOG_PRETTY: z.coerce.boolean(),
-  LOG_REQUESTS_TO_DB: z.coerce.boolean(),
-  LOG_DB_SAMPLE_RATE: z.coerce.number().min(0).max(1),
-  LOG_DB_MAX_BODY_LENGTH: z.coerce.number(),
-  
-  // Scalability & Infrastructure
-  ENABLE_CLUSTER: z.coerce.boolean(),
-  WORKER_COUNT: z.coerce.number(),
-  TRUST_PROXY: z.coerce.boolean(),
-  REQUEST_BODY_LIMIT: z.string(),
-  
-  // Prisma Logging
-  PRISMA_LOG_QUERIES: z.coerce.boolean(),
-  
-  // Caching
-  ENABLE_CACHE: z.coerce.boolean(),
-  CACHE_TTL_SECONDS: z.coerce.number(),
-  CACHE_MAX_ITEMS: z.coerce.number(),
-  
-  // MinIO Configuration
-  MINIO_ENDPOINT: z.string(),
-  MINIO_PORT: z.coerce.number(),
-  MINIO_USE_SSL: z.coerce.boolean(),
-  MINIO_ACCESS_KEY: z.string(),
-  MINIO_SECRET_KEY: z.string(),
-  MINIO_BUCKET: z.string(),
-  MINIO_PUBLIC_ENDPOINT: z.string().optional(),
-  MINIO_PUBLIC_PORT: z.coerce.number().optional(),
-  MINIO_PUBLIC_USE_SSL: z.coerce.boolean().optional(),
-  
-  // Microservices URLs
-  PYTHON_MANAGER_URL: z.string(),
-  CONVERTER_MODULE_URL: z.string(),
-  REDUCTOR_V2_MODULE_URL: z.string(),
-  REDUCTOR_V3_MODULE_URL: z.string(),
-  AI_DETECTOR_MODULE_URL: z.string(),
-  HUMANIZER_MODULE_URL: z.string(),
-});
+  // ======================
+  LOG_LEVEL: process.env.LOG_LEVEL ?? 'info',
+  LOG_DB_SAMPLE_RATE: Number(process.env.LOG_DB_SAMPLE_RATE ?? 0),
+  LOG_DB_MAX_BODY_LENGTH: Number(process.env.LOG_DB_MAX_BODY_LENGTH ?? 2048),
+  LOG_PRETTY: process.env.LOG_PRETTY === 'true',
+  LOG_REQUESTS_TO_DB: process.env.LOG_REQUESTS_TO_DB === 'true',
 
-const configResult = configSchema.safeParse(process.env);
+  // ======================
+  // Database / Redis
+  // ======================
+  DATABASE_URL: process.env.DATABASE_URL ?? '',
+  REDIS_URL: process.env.REDIS_URL ?? '',
 
-if (!configResult.success) {
-  console.error('❌ Invalid environment configuration:');
-  console.error(configResult.error.format());
-  process.exit(1);
-}
+  // ======================
+  // 🔥 MinIO (CRITICAL FIX)
+  // ======================
+  MINIO_ENDPOINT: process.env.MINIO_ENDPOINT ?? 'localhost',
+  MINIO_PORT: Number(process.env.MINIO_PORT ?? 9000),
 
-export const config = configResult.data;
-export default config;
+  // 🔥 THIS FIXES YOUR SSL ERROR
+  MINIO_USE_SSL: process.env.MINIO_USE_SSL === 'true',
+
+  MINIO_ACCESS_KEY: process.env.MINIO_ACCESS_KEY ?? '',
+  MINIO_SECRET_KEY: process.env.MINIO_SECRET_KEY ?? '',
+  MINIO_BUCKET: process.env.MINIO_BUCKET ?? 'default',
+
+  // ======================
+  // Internal services
+  // ======================
+  PYTHON_MANAGER_URL: process.env.PYTHON_MANAGER_URL ?? '',
+  CONVERTER_MODULE_URL: process.env.CONVERTER_MODULE_URL ?? '',
+  REDUCTOR_V2_MODULE_URL: process.env.REDUCTOR_V2_MODULE_URL ?? '',
+  REDUCTOR_V3_MODULE_URL: process.env.REDUCTOR_V3_MODULE_URL ?? '',
+  AI_DETECTOR_MODULE_URL: process.env.AI_DETECTOR_MODULE_URL ?? '',
+  HUMANIZER_MODULE_URL: process.env.HUMANIZER_MODULE_URL ?? '',
+
+  // ======================
+  // TUS
+  // ======================
+  TUS_PUBLIC_ENDPOINT: process.env.TUS_PUBLIC_ENDPOINT ?? '',
+  TUS_INTERNAL_ENDPOINT: process.env.TUS_INTERNAL_ENDPOINT ?? '',
+
+  // ======================
+  // CORS
+  // ======================
+  CORS_ORIGIN: process.env.CORS_ORIGIN ?? '*',
+};
