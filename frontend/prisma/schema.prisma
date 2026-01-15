@@ -30,6 +30,22 @@ model User {
   @@map("users")
 }
 
+model RequestLog {
+  id          String   @id @default(cuid())
+  method      String
+  path        String
+  statusCode  Int
+  responseTime Int
+  userId      String?
+  ip          String?
+  userAgent   String?
+
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("request_logs")
+}
+
 model Account {
   id                String  @id @default(cuid())
   userId            String
