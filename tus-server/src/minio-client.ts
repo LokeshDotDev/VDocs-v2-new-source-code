@@ -2,6 +2,14 @@ import { Client } from "minio";
 import fs from "fs";
 import path from "path";
 import { config } from "./config.js";
+// Log MinIO config at startup for debugging
+logger.info('MinIO client config', {
+	endpoint: config.minio.endpoint,
+	port: config.minio.port,
+	useSSL: config.minio.useSSL,
+	accessKey: config.minio.accessKey,
+	bucket: config.minio.bucket,
+});
 import { logger } from "./logger.js";
 
 // Validate MinIO configuration
@@ -165,6 +173,7 @@ export async function streamFileToMinio(
 }
 
 export async function verifyFileInMinIO(
+					logger.info(`MinIO upload attempt ${attempt}`, { objectKey, localPath });
 	objectKey: string,
 	expectedSize?: number
 ): Promise<boolean> {
