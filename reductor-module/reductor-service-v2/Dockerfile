@@ -18,8 +18,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Copy converter-module/services into /app/services for import
-COPY ../../python-manager/modules/converter-module/services ./services
+# Copy local services directory into /app/services for import
+COPY services ./services
 
 # Create tmp directory
 RUN mkdir -p tmp
