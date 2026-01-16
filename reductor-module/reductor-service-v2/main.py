@@ -5,6 +5,9 @@ Reductor Service v2: FastAPI entry point
 """
 
 import os
+import shutil
+import tempfile
+import io
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional
@@ -111,7 +114,6 @@ def anonymize(req: AnonymizeRequest):
         # Step 3: Detect identity BEFORE
         logger.info("\n[3/6] Detecting student identity (BEFORE anonymization)...")
         from utils.docx_anonymizer import unzip_docx
-        import shutil
         temp_unzip = unzip_docx(converted_path)
         tree_before = load_xml(os.path.join(temp_unzip, "word/document.xml"))
         identity_before = detect_identity(tree_before)
@@ -130,7 +132,7 @@ def anonymize(req: AnonymizeRequest):
         )
 
         # If nothing was removed, try all detected entities (fallback for edge cases)
-        import tempfile
+        # tempfile imported globally
         if anon_stats.get("removed_name", 0) == 0 and anon_stats.get("removed_roll", 0) == 0:
             logger.warning("No PII removed in first pass. Trying all detected entities as fallback...")
             for det in (identity_before.get("detections") or []):
@@ -146,7 +148,7 @@ def anonymize(req: AnonymizeRequest):
                     stats2 = anonymize_docx(converted_path, temp_output, roll_no=ent_val)
                     anon_stats["removed_roll"] += stats2.get("removed_roll", 0)
                 # After each fallback, copy temp_output to anonymized_path for next step
-                import shutil, os
+                # shutil, os imported globally
                 shutil.copy(temp_output, anonymized_path)
                 os.remove(temp_output)
             logger.info(f"Fallback anonymization complete: {anon_stats}")
@@ -163,7 +165,7 @@ def anonymize(req: AnonymizeRequest):
         logger.info("\n[6/6] Uploading anonymized DOCX to MinIO...")
         output_key = req.output_key or req.object_key.replace("/raw/", "/formatted/").replace(".pdf", "_anonymized.docx")
         with open(anonymized_path, "rb") as f:
-            import io
+            # io imported globally
             buf = io.BytesIO(f.read())
         minio_client.upload(
             req.bucket,
