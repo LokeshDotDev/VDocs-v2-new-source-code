@@ -107,6 +107,7 @@ def anonymize(req: AnonymizeRequest):
         logger.info("[2.5/6] Sanitizing converted DOCX for glyph cleanup...")
         sanitize_docx_inplace(converted_path)
 
+
         # Step 3: Detect identity BEFORE
         logger.info("\n[3/6] Detecting student identity (BEFORE anonymization)...")
         from utils.docx_anonymizer import unzip_docx
@@ -117,14 +118,30 @@ def anonymize(req: AnonymizeRequest):
         logger.info(f"✅ Detected: {identity_before}")
         shutil.rmtree(temp_unzip)
 
-        # Step 4: Anonymize
+        # Step 4: Anonymize (robust: try all detected PII if needed)
         logger.info("\n[4/6] Anonymizing (removing name and roll)...")
+        name = identity_before.get("name")
+        roll_no = identity_before.get("roll_no")
         anon_stats = anonymize_docx(
             converted_path,
             anonymized_path,
-            name=identity_before.get("name"),
-            roll_no=identity_before.get("roll_no"),
+            name=name,
+            roll_no=roll_no,
         )
+
+        # If nothing was removed, try all detected entities (fallback for edge cases)
+        if anon_stats.get("removed_name", 0) == 0 and anon_stats.get("removed_roll", 0) == 0:
+            logger.warning("No PII removed in first pass. Trying all detected entities as fallback...")
+            for det in (identity_before.get("detections") or []):
+                ent_type = det.get("entity_type")
+                ent_val = det.get("text")
+                if ent_type == "PERSON":
+                    stats2 = anonymize_docx(anonymized_path, anonymized_path, name=ent_val)
+                    anon_stats["removed_name"] += stats2.get("removed_name", 0)
+                elif ent_type == "STUDENT_ROLL_NUMBER":
+                    stats2 = anonymize_docx(anonymized_path, anonymized_path, roll_no=ent_val)
+                    anon_stats["removed_roll"] += stats2.get("removed_roll", 0)
+            logger.info(f"Fallback anonymization complete: {anon_stats}")
 
         # Step 5: Detect identity AFTER
         logger.info("\n[5/6] Detecting student identity (AFTER anonymization)...")
