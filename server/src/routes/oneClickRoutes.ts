@@ -209,18 +209,7 @@ async function startJobProcessing(jobId: string) {
     return;
   }
   // Optionally, poll Python Manager for job status and continue pipeline as needed
-    if (zipResult.zipKey) {
-      jobService.setExportZipKey(jobId, zipResult.zipKey);
-    }
-    logger.info({ jobId, zipKey: zipResult.zipKey }, '[startJobProcessing] ZIP created');
-  } catch (err) {
-    jobService.updateJobStatus(jobId, 'failed', { errorMessage: String(err) });
-    logger.error({ jobId, error: String(err) }, '[startJobProcessing] ZIP creation error');
-    return;
-  }
-
-  jobService.updateJobStatus(jobId, 'completed');
-  logger.info({ jobId }, '[startJobProcessing] All pipeline steps complete, job marked completed');
+  // (ZIP creation and job completion should be handled after Python Manager signals completion)
 }
 
 /**
