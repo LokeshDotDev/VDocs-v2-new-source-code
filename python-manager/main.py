@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import Body
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
 import requests
@@ -10,6 +11,15 @@ from config import config
 from logger import get_logger
 from modules.ai_detector.binoculars_detector import BinocularsDetector
 from docx import Document
+
+# Import orchestration logic from process_job.py
+import sys
+import importlib.util
+process_job_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'process_job.py')
+spec = importlib.util.spec_from_file_location("process_job_module", process_job_path)
+process_job_module = importlib.util.module_from_spec(spec)
+sys.modules["process_job_module"] = process_job_module
+spec.loader.exec_module(process_job_module)
 
 logger = get_logger(__name__)
 
@@ -52,6 +62,24 @@ class ExtractTextRequest(BaseModel):
     file_path: str
 
 # Routes
+
+# --- Orchestration endpoint for production ---
+from pydantic import BaseModel
+
+class ProcessJobRequest(BaseModel):
+    job_id: str
+
+@app.post("/process-job")
+async def process_job_endpoint(request: ProcessJobRequest = Body(...)):
+    logger.info(f"[process-job] Starting orchestration for job: {request.job_id}")
+    try:
+        result = process_job_module.process_job(request.job_id)
+        status = "completed" if result else "failed"
+        logger.info(f"[process-job] Job {request.job_id} status: {status}")
+        return {"status": status, "jobId": request.job_id}
+    except Exception as e:
+        logger.error(f"[process-job] Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
     """Manager health check - also checks registered services."""
