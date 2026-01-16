@@ -1,4 +1,15 @@
 import { Router, Request, Response } from 'express';
+import type { Job } from '../services/jobService.js';
+
+interface ReductorResponse {
+  minio_output_key?: string;
+  [key: string]: any;
+}
+
+interface ZipResponse {
+  zipKey?: string;
+  [key: string]: any;
+}
 import jobService from '../services/jobService.js';
 import logger from '../lib/logger.js';
 
@@ -115,7 +126,7 @@ router.post('/upload-complete', async (req: Request, res: Response) => {
  * ----------------------------------------------------
  */
 async function startJobProcessing(jobId: string) {
-  const job = jobService.getJob(jobId);
+  const job = jobService.getJob(jobId) as Job | undefined;
   if (!job) {
     logger.error({ jobId }, '[startJobProcessing] Job not found');
     return;
@@ -150,7 +161,7 @@ async function startJobProcessing(jobId: string) {
         clearTimeout(timeout);
         if (resp.ok) {
           logger.info({ jobId, fileKey, attempt, status: resp.status }, '[startJobProcessing] Reductor /anonymize success');
-          const result = await resp.json();
+          const result: ReductorResponse = await resp.json();
           if (result.minio_output_key) {
             jobService.addAnonymizedFile(jobId, result.minio_output_key);
           }
@@ -284,7 +295,7 @@ async function startJobProcessing(jobId: string) {
       logger.error({ jobId, error: errorText }, '[startJobProcessing] ZIP creation failed');
       return;
     }
-    const zipResult = await zipResp.json();
+    const zipResult: ZipResponse = await zipResp.json();
     if (zipResult.zipKey) {
       jobService.setExportZipKey(jobId, zipResult.zipKey);
     }
