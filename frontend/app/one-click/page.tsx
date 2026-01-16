@@ -245,15 +245,7 @@ export default function OneClickPage() {
 			console.log("✅ All files uploaded!");
 			
 			// Start processing
-			const processResponse = await fetch("/api/one-click/process", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ jobId: newJobId }),
-			});
-
-			if (!processResponse.ok) throw new Error("Processing failed");
-
-			console.log("✅ Processing started");
+			// Processing is now automatic after upload-complete
 			startPolling(newJobId);
 		} catch (error) {
 			console.error("❌ Error:", error);

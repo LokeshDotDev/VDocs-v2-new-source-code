@@ -134,20 +134,9 @@ def test_tus_upload(upload_url, metadata, file_path):
 
 def test_process(job_id):
     """Test processing endpoint"""
-    print(f"\n🧪 Test 4: Start Processing")
+    print(f"\n🧪 Test 4: Start Processing (skipped)")
     print("-" * 50)
-    
-    response = requests.post(
-        f"{BASE_URL}/api/one-click/process",
-        json={"jobId": job_id},
-        headers={"Content-Type": "application/json"}
-    )
-    
-    if response.status_code != 200:
-        print(f"❌ Failed: {response.text}")
-        return False
-    
-    print(f"✅ Processing started")
+    print("ℹ️  Skipping manual /process call; backend triggers processing automatically.")
     return True
 
 def monitor_processing(job_id, timeout=300):
@@ -240,9 +229,9 @@ def main():
     
     time.sleep(2)  # Wait for TUS server to process
     
-    # Step 4: Start processing
+    # Step 4: Start processing (skipped)
     if not test_process(job_id):
-        print("\n❌ Test failed at processing start")
+        print("\n❌ Test failed at processing start (should not happen)")
         sys.exit(1)
     
     # Step 5: Monitor processing
