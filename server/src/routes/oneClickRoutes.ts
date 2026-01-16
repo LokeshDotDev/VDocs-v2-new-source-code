@@ -209,7 +209,7 @@ async function startJobProcessing(jobId: string) {
   }
 
   // 4. Poll for humanizer completion
-  let humanizerStatus = null;
+  let humanizerStatus: Job | null = null;
   const pollInterval = 2000;
   const timeoutMs = 1000 * 60 * 30;
   const start = Date.now();
@@ -217,7 +217,7 @@ async function startJobProcessing(jobId: string) {
     try {
       const statusResp = await fetch(`${API_BASE_URL}/api/humanizer/job/${humanizerJobId}`);
       if (statusResp.ok) {
-        const statusJson = await statusResp.json();
+        const statusJson: { job?: Job } = await statusResp.json();
         if (statusJson.job && statusJson.job.status === 'completed') {
           humanizerStatus = statusJson.job;
           break;
@@ -259,13 +259,13 @@ async function startJobProcessing(jobId: string) {
   }
 
   // 6. Poll for grammar completion (if batch endpoint exists)
-  let grammarStatus = null;
+  let grammarStatus: Job | null = null;
   const grammarStart = Date.now();
   while (Date.now() - grammarStart < timeoutMs) {
     try {
       const statusResp = await fetch(`${API_BASE_URL}/api/humanizer/grammar-job/${grammarJobId}`);
       if (statusResp.ok) {
-        const statusJson = await statusResp.json();
+        const statusJson: { job?: Job } = await statusResp.json();
         if (statusJson.job && statusJson.job.status === 'completed') {
           grammarStatus = statusJson.job;
           break;
@@ -323,7 +323,7 @@ router.get('/status', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'jobId is required' });
     }
 
-    const job = jobService.getJob(jobId);
+    const job = jobService.getJob(jobId) as Job | undefined;
     if (!job) {
       return res.status(404).json({ error: 'Job not found' });
     }
