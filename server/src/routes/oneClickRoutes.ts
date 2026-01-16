@@ -186,118 +186,29 @@ async function startJobProcessing(jobId: string) {
     }
   }
 
-  // 3. Trigger Humanizer batch job for all anonymized files
+  // 3. Send anonymized files to Python Manager for further processing (Humanizer + Grammar)
   jobService.updateJobStatus(jobId, 'processing');
-  let humanizerJobId = null;
   try {
-    const humanizerResp = await fetch(`${API_BASE_URL}/api/humanizer/humanize-batch`, {
+    const PYTHON_MANAGER_URL = process.env.PYTHON_MANAGER_URL || 'http://vdocs-python-manager-falfws:5000';
+    const response = await fetch(`${PYTHON_MANAGER_URL}/process-job`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileKeys: job.anonymizedFiles }),
+      body: JSON.stringify({ jobId, fileKeys: job.anonymizedFiles }),
     });
-    if (!humanizerResp.ok) {
-      const errorText = await humanizerResp.text();
+    if (!response.ok) {
+      const errorText = await response.text();
       jobService.updateJobStatus(jobId, 'failed', { errorMessage: errorText });
-      logger.error({ jobId, error: errorText }, '[startJobProcessing] Humanizer batch failed');
+      logger.error({ jobId, error: errorText }, '[startJobProcessing] Python Manager process-job failed');
       return;
     }
-    const humanizerResult = await humanizerResp.json();
-    humanizerJobId = (humanizerResult as { jobId?: string }).jobId;
-    logger.info({ jobId, humanizerJobId }, '[startJobProcessing] Humanizer batch started');
+    const result = await response.json();
+    logger.info({ jobId, result }, '[startJobProcessing] Python Manager process-job started');
   } catch (err) {
     jobService.updateJobStatus(jobId, 'failed', { errorMessage: String(err) });
-    logger.error({ jobId, error: String(err) }, '[startJobProcessing] Humanizer batch error');
+    logger.error({ jobId, error: String(err) }, '[startJobProcessing] Python Manager process-job error');
     return;
   }
-
-  // 4. Poll for humanizer completion
-  let humanizerStatus: (Job & { results?: Results }) | null = null;
-  const pollInterval = 2000;
-  const timeoutMs = 1000 * 60 * 30;
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const statusResp = await fetch(`${API_BASE_URL}/api/humanizer/job/${humanizerJobId}`);
-      if (statusResp.ok) {
-        const statusJson: { job?: Job & { results?: Results } } = await statusResp.json();
-        if (statusJson.job && statusJson.job.status === 'completed') {
-          humanizerStatus = statusJson.job;
-          break;
-        }
-      }
-    } catch (err) {
-      logger.warn({ jobId, error: String(err) }, '[startJobProcessing] Humanizer status poll error');
-    }
-    await new Promise(res => setTimeout(res, pollInterval));
-  }
-  if (!humanizerStatus || humanizerStatus.status !== 'completed') {
-    jobService.updateJobStatus(jobId, 'failed', { errorMessage: 'Humanizer job failed or timed out' });
-    logger.error({ jobId }, '[startJobProcessing] Humanizer job failed or timed out');
-    return;
-  }
-
-  // 5. Trigger grammar correction batch (if available)
-  // NOTE: Replace with your actual grammar batch endpoint if available
-  let grammarJobId = null;
-  try {
-    const grammarResp = await fetch(`${API_BASE_URL}/api/humanizer/grammar-batch`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileKeys: (humanizerStatus?.results ?? []).map(r => r.outputFileKey) }),
-    });
-    if (!grammarResp.ok) {
-      const errorText = await grammarResp.text();
-      jobService.updateJobStatus(jobId, 'failed', { errorMessage: errorText });
-      logger.error({ jobId, error: errorText }, '[startJobProcessing] Grammar batch failed');
-      return;
-    }
-    const grammarResult = await grammarResp.json();
-    grammarJobId = (grammarResult as { jobId?: string }).jobId;
-    logger.info({ jobId, grammarJobId }, '[startJobProcessing] Grammar batch started');
-  } catch (err) {
-    jobService.updateJobStatus(jobId, 'failed', { errorMessage: String(err) });
-    logger.error({ jobId, error: String(err) }, '[startJobProcessing] Grammar batch error');
-    return;
-  }
-
-  // 6. Poll for grammar completion (if batch endpoint exists)
-  let grammarStatus: (Job & { results?: Results }) | null = null;
-  const grammarStart = Date.now();
-  while (Date.now() - grammarStart < timeoutMs) {
-    try {
-      const statusResp = await fetch(`${API_BASE_URL}/api/humanizer/grammar-job/${grammarJobId}`);
-      if (statusResp.ok) {
-        const statusJson: { job?: Job & { results?: Results } } = await statusResp.json();
-        if (statusJson.job && statusJson.job.status === 'completed') {
-          grammarStatus = statusJson.job;
-          break;
-        }
-      }
-    } catch (err) {
-      logger.warn({ jobId, error: String(err) }, '[startJobProcessing] Grammar status poll error');
-    }
-    await new Promise(res => setTimeout(res, pollInterval));
-  }
-  if (!grammarStatus || grammarStatus.status !== 'completed') {
-    jobService.updateJobStatus(jobId, 'failed', { errorMessage: 'Grammar job failed or timed out' });
-    logger.error({ jobId }, '[startJobProcessing] Grammar job failed or timed out');
-    return;
-  }
-
-  // 7. Create ZIP of all grammar-corrected files (or humanized if no grammar step)
-  try {
-    const zipResp = await fetch(`${API_BASE_URL}/api/process/batch`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jobId, fileKeys: (grammarStatus?.results ?? []).map(r => r.outputFileKey) }),
-    });
-    if (!zipResp.ok) {
-      const errorText = await zipResp.text();
-      jobService.updateJobStatus(jobId, 'failed', { errorMessage: errorText });
-      logger.error({ jobId, error: errorText }, '[startJobProcessing] ZIP creation failed');
-      return;
-    }
-    const zipResult: ZipResponse = await zipResp.json();
+  // Optionally, poll Python Manager for job status and continue pipeline as needed
     if (zipResult.zipKey) {
       jobService.setExportZipKey(jobId, zipResult.zipKey);
     }
