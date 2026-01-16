@@ -173,7 +173,6 @@ export async function streamFileToMinio(
 }
 
 export async function verifyFileInMinIO(
-					logger.info(`MinIO upload attempt ${attempt}`, { objectKey, localPath });
 	objectKey: string,
 	expectedSize?: number
 ): Promise<boolean> {
