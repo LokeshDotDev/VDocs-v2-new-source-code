@@ -1,6 +1,28 @@
 // lib/config.ts
 
 export const config = {
+    // ======================
+    // Request body limit
+    // ======================
+    REQUEST_BODY_LIMIT: process.env.REQUEST_BODY_LIMIT ?? '5mb',
+
+    // ======================
+    // Cache
+    // ======================
+    CACHE_MAX_ITEMS: Number(process.env.CACHE_MAX_ITEMS ?? 1000),
+    CACHE_TTL_SECONDS: Number(process.env.CACHE_TTL_SECONDS ?? 300),
+    ENABLE_CACHE: process.env.ENABLE_CACHE === 'true',
+
+    // ======================
+    // Prisma
+    // ======================
+    PRISMA_LOG_QUERIES: process.env.PRISMA_LOG_QUERIES === 'true',
+
+    // ======================
+    // Basic Auth
+    // ======================
+    BASIC_AUTH_USERNAME: process.env.BASIC_AUTH_USERNAME ?? '',
+    BASIC_AUTH_PASSWORD: process.env.BASIC_AUTH_PASSWORD ?? '',
   // ======================
   // App
   // ======================
