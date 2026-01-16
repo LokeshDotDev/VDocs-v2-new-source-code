@@ -21,6 +21,9 @@ COPY . .
 # Copy local services directory into /app/services for import
 COPY services ./services
 
+# Patch pdf2docx for Python 3.11 compatibility (Iterable import)
+RUN sed -i 's/from collections import Iterable/from collections.abc import Iterable/g' /usr/local/lib/python3.11/site-packages/pdf2docx/text/Line.py
+
 # Create tmp directory
 RUN mkdir -p tmp
 
