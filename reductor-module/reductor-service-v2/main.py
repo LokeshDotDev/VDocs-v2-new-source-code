@@ -130,17 +130,25 @@ def anonymize(req: AnonymizeRequest):
         )
 
         # If nothing was removed, try all detected entities (fallback for edge cases)
+        import tempfile
         if anon_stats.get("removed_name", 0) == 0 and anon_stats.get("removed_roll", 0) == 0:
             logger.warning("No PII removed in first pass. Trying all detected entities as fallback...")
             for det in (identity_before.get("detections") or []):
                 ent_type = det.get("entity_type")
                 ent_val = det.get("text")
+                # Always use converted_path as input, temp file as output
+                with tempfile.NamedTemporaryFile(suffix='_anonymized.docx', delete=False) as tmp:
+                    temp_output = tmp.name
                 if ent_type == "PERSON":
-                    stats2 = anonymize_docx(anonymized_path, anonymized_path, name=ent_val)
+                    stats2 = anonymize_docx(converted_path, temp_output, name=ent_val)
                     anon_stats["removed_name"] += stats2.get("removed_name", 0)
                 elif ent_type == "STUDENT_ROLL_NUMBER":
-                    stats2 = anonymize_docx(anonymized_path, anonymized_path, roll_no=ent_val)
+                    stats2 = anonymize_docx(converted_path, temp_output, roll_no=ent_val)
                     anon_stats["removed_roll"] += stats2.get("removed_roll", 0)
+                # After each fallback, copy temp_output to anonymized_path for next step
+                import shutil, os
+                shutil.copy(temp_output, anonymized_path)
+                os.remove(temp_output)
             logger.info(f"Fallback anonymization complete: {anon_stats}")
 
         # Step 5: Detect identity AFTER
