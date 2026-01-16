@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { db } from '../lib/db.js';
-import config from '../lib/config.js';
+import { config } from '../lib/config.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
 const basicAuthSchema = z.object({

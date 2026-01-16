@@ -17,12 +17,12 @@ export const minioClient = new Minio.Client({
 export async function ensureBucket() {
   try {
     // 🔎 TEMP DEBUG (REMOVE LATER)
-    logger.info('🪣 MinIO config', {
+    logger.info({
       endpoint: config.MINIO_ENDPOINT,
       port: config.MINIO_PORT,
       useSSL: config.MINIO_USE_SSL,
       bucket: config.MINIO_BUCKET,
-    });
+    }, '🪣 MinIO config');
 
     const exists = await minioClient.bucketExists(config.MINIO_BUCKET);
 

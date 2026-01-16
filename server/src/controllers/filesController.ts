@@ -7,15 +7,15 @@ import logger from '../lib/logger.js';
 // ONLYOFFICE container) can reach MinIO via the published host/port.
 function rewritePresignedUrlForPublicAccess(url: string): string {
   try {
-    const publicHost = config.MINIO_PUBLIC_ENDPOINT;
+    const publicHost = config.MINIO_ENDPOINT;
     if (!publicHost || publicHost.length === 0) return url;
     const u = new URL(url);
     u.hostname = publicHost;
-    if (typeof config.MINIO_PUBLIC_PORT === 'number' && !Number.isNaN(config.MINIO_PUBLIC_PORT)) {
-      u.port = String(config.MINIO_PUBLIC_PORT);
+    if (typeof config.MINIO_PORT === 'number' && !Number.isNaN(config.MINIO_PORT)) {
+      u.port = String(config.MINIO_PORT);
     }
-    if (typeof config.MINIO_PUBLIC_USE_SSL !== 'undefined') {
-      u.protocol = config.MINIO_PUBLIC_USE_SSL ? 'https:' : 'http:';
+    if (typeof config.MINIO_USE_SSL !== 'undefined') {
+      u.protocol = config.MINIO_USE_SSL ? 'https:' : 'http:';
     }
     return u.toString();
   } catch (e) {
@@ -269,9 +269,9 @@ export const getDocxFileUrl = async (
 
     // Use simple public URL format instead of presigned URLs
     // This works because MINIO_ALLOW_PUBLIC_BUCKET_ACCESS=true in docker-compose
-    const publicHost = config.MINIO_PUBLIC_ENDPOINT || config.MINIO_ENDPOINT || 'localhost';
-    const publicPort = config.MINIO_PUBLIC_PORT || config.MINIO_PORT || '9000';
-    const protocol = config.MINIO_PUBLIC_USE_SSL ? 'https' : 'http';
+    const publicHost = config.MINIO_ENDPOINT || 'localhost';
+    const publicPort = config.MINIO_PORT || '9000';
+    const protocol = config.MINIO_USE_SSL ? 'https' : 'http';
 
     const url = `${protocol}://${publicHost}:${publicPort}/${config.MINIO_BUCKET}/${key}`;
     logger.info(`[getDocxFileUrl] Public URL: ${url}`);

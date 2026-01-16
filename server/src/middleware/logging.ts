@@ -3,7 +3,7 @@ import pinoHttp from 'pino-http';
 import { Prisma } from '@prisma/client';
 import { db } from '../lib/db.js';
 import logger from '../lib/logger.js';
-import config from '../lib/config.js';
+import { config } from '../lib/config.js';
 import type { RequestLogData, AuthenticatedRequest } from '../types/index.js';
 
 // Define minimal factory and middleware types to avoid using 'any'

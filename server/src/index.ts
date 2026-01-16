@@ -6,7 +6,7 @@ import rateLimit, { type Store as RateLimitStore } from 'express-rate-limit';
 import { RedisStore } from 'rate-limit-redis';
 import Redis from 'ioredis';
 import { db } from './lib/db.js';
-import config from './lib/config.js';
+import { config } from './lib/config.js';
 import logger from './lib/logger.js';
 import { requestIdMiddleware } from './middleware/requestId.js';
 import { httpLogger, dbLogger } from './middleware/logging.js';

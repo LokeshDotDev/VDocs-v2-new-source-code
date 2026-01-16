@@ -1,4 +1,4 @@
-import config from './config.js';
+import { config } from './config.js';
 import logger from './logger.js';
 import Redis from 'ioredis';
 import { LRUCache } from 'lru-cache';
