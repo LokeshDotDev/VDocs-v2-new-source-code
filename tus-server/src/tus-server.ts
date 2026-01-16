@@ -161,7 +161,18 @@ export function createTusServer(): Server {
 				return; // Don't process as single file
 			}
 
-						// Notify backend of upload completion (reliable, production-safe)
+						// 1. Check file existence
+						if (!fs.existsSync(filePath)) {
+							logger.error("❌ File not found for upload", { filePath });
+							return;
+						}
+						const stats = fs.statSync(filePath);
+						if (stats.size === 0) {
+							logger.error("❌ File is empty", { filePath });
+							return;
+						}
+
+						// 2. Upload to MinIO
 						const jobId = cleanMetadata.jobId;
 						const stage = cleanMetadata.stage || "raw";
 						const filename = cleanMetadata.filename || upload.id;
@@ -171,9 +182,21 @@ export function createTusServer(): Server {
 							stage,
 							relativePath,
 						});
-						const fileKey = objectKey;
+						try {
+							await ensureBucket();
+							await streamFileToMinio(filePath, objectKey, cleanMetadata);
+							logger.info("✅ Uploaded file to MinIO", { objectKey });
+						} catch (err) {
+							logger.error("❌ Failed to upload file to MinIO", {
+								objectKey,
+								filePath,
+								error: err instanceof Error ? err.message : String(err),
+							});
+							return;
+						}
 
-						// Backend URL resolver
+						// 3. Notify backend of upload completion
+						const fileKey = objectKey;
 						const backendUrl =
 							process.env.BACKEND_INTERNAL_URL ||
 							process.env.TUS_BACKEND_URL ||
