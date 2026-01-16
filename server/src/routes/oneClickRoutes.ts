@@ -202,7 +202,7 @@ async function startJobProcessing(jobId: string) {
       return;
     }
     const humanizerResult = await humanizerResp.json();
-    humanizerJobId = humanizerResult.jobId;
+    humanizerJobId = (humanizerResult as { jobId?: string }).jobId;
     logger.info({ jobId, humanizerJobId }, '[startJobProcessing] Humanizer batch started');
   } catch (err) {
     jobService.updateJobStatus(jobId, 'failed', { errorMessage: String(err) });
