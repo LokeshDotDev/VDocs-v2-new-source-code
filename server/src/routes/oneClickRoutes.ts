@@ -125,6 +125,8 @@ router.post('/upload-complete', async (req: Request, res: Response) => {
  * 3️⃣ REDUCTOR TRIGGER (internal)
  * ----------------------------------------------------
  */
+type Results = { outputFileKey: string }[];
+
 async function startJobProcessing(jobId: string) {
   const job = jobService.getJob(jobId) as Job | undefined;
   if (!job) {
@@ -209,7 +211,7 @@ async function startJobProcessing(jobId: string) {
   }
 
   // 4. Poll for humanizer completion
-  let humanizerStatus: Job | null = null;
+  let humanizerStatus: (Job & { results?: Results }) | null = null;
   const pollInterval = 2000;
   const timeoutMs = 1000 * 60 * 30;
   const start = Date.now();
@@ -217,7 +219,7 @@ async function startJobProcessing(jobId: string) {
     try {
       const statusResp = await fetch(`${API_BASE_URL}/api/humanizer/job/${humanizerJobId}`);
       if (statusResp.ok) {
-        const statusJson: { job?: Job } = await statusResp.json();
+        const statusJson: { job?: Job & { results?: Results } } = await statusResp.json();
         if (statusJson.job && statusJson.job.status === 'completed') {
           humanizerStatus = statusJson.job;
           break;
@@ -241,7 +243,7 @@ async function startJobProcessing(jobId: string) {
     const grammarResp = await fetch(`${API_BASE_URL}/api/humanizer/grammar-batch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileKeys: humanizerStatus.results.map(r => r.outputFileKey) }),
+      body: JSON.stringify({ fileKeys: (humanizerStatus?.results ?? []).map(r => r.outputFileKey) }),
     });
     if (!grammarResp.ok) {
       const errorText = await grammarResp.text();
@@ -250,7 +252,7 @@ async function startJobProcessing(jobId: string) {
       return;
     }
     const grammarResult = await grammarResp.json();
-    grammarJobId = grammarResult.jobId;
+    grammarJobId = (grammarResult as { jobId?: string }).jobId;
     logger.info({ jobId, grammarJobId }, '[startJobProcessing] Grammar batch started');
   } catch (err) {
     jobService.updateJobStatus(jobId, 'failed', { errorMessage: String(err) });
@@ -259,13 +261,13 @@ async function startJobProcessing(jobId: string) {
   }
 
   // 6. Poll for grammar completion (if batch endpoint exists)
-  let grammarStatus: Job | null = null;
+  let grammarStatus: (Job & { results?: Results }) | null = null;
   const grammarStart = Date.now();
   while (Date.now() - grammarStart < timeoutMs) {
     try {
       const statusResp = await fetch(`${API_BASE_URL}/api/humanizer/grammar-job/${grammarJobId}`);
       if (statusResp.ok) {
-        const statusJson: { job?: Job } = await statusResp.json();
+        const statusJson: { job?: Job & { results?: Results } } = await statusResp.json();
         if (statusJson.job && statusJson.job.status === 'completed') {
           grammarStatus = statusJson.job;
           break;
@@ -287,7 +289,7 @@ async function startJobProcessing(jobId: string) {
     const zipResp = await fetch(`${API_BASE_URL}/api/process/batch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jobId, fileKeys: grammarStatus.results.map(r => r.outputFileKey) }),
+      body: JSON.stringify({ jobId, fileKeys: (grammarStatus?.results ?? []).map(r => r.outputFileKey) }),
     });
     if (!zipResp.ok) {
       const errorText = await zipResp.text();
