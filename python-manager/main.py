@@ -18,16 +18,21 @@ logger = get_logger(__name__)
 # =========================================================
 # 🔥 SAFE + DOCKER-CORRECT process_job.py IMPORT
 # =========================================================
-BASE_DIR = Path(__file__).resolve().parent
-PROCESS_JOB_PATH = BASE_DIR / "scripts" / "process_job.py"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-if not PROCESS_JOB_PATH.exists():
-    raise FileNotFoundError(f"❌ process_job.py not found at {PROCESS_JOB_PATH}")
+PROCESS_JOB_PATH = os.path.join(BASE_DIR, "scripts", "process_job.py")
+
+if not os.path.isfile(PROCESS_JOB_PATH):
+    raise FileNotFoundError(
+        f"❌ process_job.py not found.\nExpected at: {PROCESS_JOB_PATH}\n"
+        f"Contents of BASE_DIR: {os.listdir(BASE_DIR)}"
+    )
 
 spec = importlib.util.spec_from_file_location(
     "process_job_module",
-    str(PROCESS_JOB_PATH),
+    PROCESS_JOB_PATH
 )
+
 process_job_module = importlib.util.module_from_spec(spec)
 sys.modules["process_job_module"] = process_job_module
 spec.loader.exec_module(process_job_module)
