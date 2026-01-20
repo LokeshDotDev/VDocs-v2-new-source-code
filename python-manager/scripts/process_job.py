@@ -15,7 +15,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 # Add module paths
 PYTHON_MANAGER = os.path.join(PROJECT_ROOT, "python-manager")
-CONVERTER_MODULE = os.path.join(PYTHON_MANAGER, "modules", "converter-module")
+CONVERTER_MODULE = os.path.join(PYTHON_MANAGER, "modules", "converter_module")
 REDUCTOR_MODULE = os.path.join(PROJECT_ROOT, "reductor-module", "reductor-service-v2")
 HUMANIZER_MODULE = os.path.join(PYTHON_MANAGER, "modules", "humanizer")
 SPELL_CHECKER_MODULE = os.path.join(PYTHON_MANAGER, "modules", "spell-grammar-checker")
