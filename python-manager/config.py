@@ -4,19 +4,18 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Config:
-        # MinIO
-        MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
-        MINIO_PORT = int(os.getenv("MINIO_PORT", 9000))
-        MINIO_USE_SSL = os.getenv("MINIO_USE_SSL", "false").lower() == "true"
-        MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-        MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
-        MINIO_BUCKET = os.getenv("MINIO_BUCKET", "wedocs")
+    # MinIO
+    MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
+    MINIO_PORT = int(os.getenv("MINIO_PORT", 9000))
+    MINIO_USE_SSL = os.getenv("MINIO_USE_SSL", "false").lower() == "true"
+    MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
+    MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+    MINIO_BUCKET = os.getenv("MINIO_BUCKET", "wedocs")
     # FastAPI
     APP_NAME = "Document Processing Manager"
     APP_VERSION = "0.1.0"
     DEBUG = os.getenv("DEBUG", "false").lower() == "true"
     PORT = int(os.getenv("PORT", 5000))
-    
     # Service Registry - routes to different modules
     SERVICES = {
         "converter": {
