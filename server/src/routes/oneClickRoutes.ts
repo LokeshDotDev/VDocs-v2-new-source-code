@@ -193,7 +193,7 @@ async function startJobProcessing(jobId: string) {
     const response = await fetch(`${PYTHON_MANAGER_URL}/process-job`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jobId, fileKeys: job.anonymizedFiles }),
+      body: JSON.stringify({ job_id: jobId, fileKeys: job.anonymizedFiles }),
     });
     if (!response.ok) {
       const errorText = await response.text();
