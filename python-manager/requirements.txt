@@ -1,3 +1,4 @@
+pdf2docx
 PyMuPDF
 minio
 fastapi==0.104.1
