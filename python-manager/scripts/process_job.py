@@ -18,7 +18,7 @@ PYTHON_MANAGER = os.path.join(PROJECT_ROOT, "python-manager")
 CONVERTER_MODULE = os.path.join(PYTHON_MANAGER, "modules", "converter_module")
 REDUCTOR_MODULE = os.path.join(PROJECT_ROOT, "reductor-module", "reductor-service-v2")
 HUMANIZER_MODULE = "/app/modules/humanizer"
-SPELL_CHECKER_MODULE = os.path.join(PYTHON_MANAGER, "modules", "spell-grammar-checker")
+    SPELL_CHECKER_MODULE = "/app/modules/spell-grammar-checker"
 FORMATTER_MODULE = os.path.join(PYTHON_MANAGER, "modules", "document-formatter")
 
 # Strategy: Import each module's dependencies in isolation
