@@ -25,8 +25,10 @@ FORMATTER_MODULE = os.path.join(PYTHON_MANAGER, "modules", "document-formatter")
 try:
     # === CONVERTER MODULE ===
     sys.path.insert(0, CONVERTER_MODULE)
-    from utils.minio_handler import minio_handler
+    sys.path.insert(0, os.path.join(CONVERTER_MODULE, "utils"))
+    from minio_handler import minio_handler
     from services.pdf_converter import PDFConverter
+    sys.path.pop(0)
     sys.path.pop(0)
     
     # Clear utils from cache to allow other utils packages
