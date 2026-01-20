@@ -49,8 +49,8 @@ services:
   # ============================================
   python-manager:
     build:
-      context: ./python-manager
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./python-manager/Dockerfile
     container_name: python-manager
     environment:
       - PORT=5050
@@ -59,7 +59,6 @@ services:
     ports:
       - "5050:5050"
     volumes:
-      - ./python-manager:/app
       - ./tmp:/app/tmp
     networks:
       - wedocs-net

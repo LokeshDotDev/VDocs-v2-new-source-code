@@ -37,12 +37,7 @@ process_job_module = importlib.util.module_from_spec(spec)
 sys.modules["process_job_module"] = process_job_module
 spec.loader.exec_module(process_job_module)
 
-logger.info(
-    {
-        "process_job_path": str(PROCESS_JOB_PATH),
-    },
-    "✅ process_job.py loaded successfully",
-)
+logger.info(f"✅ process_job.py loaded successfully | process_job_path={PROCESS_JOB_PATH}")
 
 # =========================================================
 # INIT SERVICES
@@ -95,18 +90,12 @@ async def health_check():
 # ---------------------------------------------------------
 @app.post("/process-job")
 async def process_job_endpoint(payload: ProcessJobRequest = Body(...)):
-    logger.info(
-        {"job_id": payload.job_id},
-        "[process-job] Starting orchestration",
-    )
+    logger.info(f"[process-job] Starting orchestration | job_id={payload.job_id}")
     try:
         result = process_job_module.process_job(payload.job_id)
         status = "completed" if result else "failed"
 
-        logger.info(
-            {"job_id": payload.job_id, "status": status},
-            "[process-job] Finished",
-        )
+        logger.info(f"[process-job] Finished | job_id={payload.job_id} | status={status}")
         return {"jobId": payload.job_id, "status": status}
     except Exception as e:
         logger.exception("[process-job] Fatal error")
@@ -155,9 +144,6 @@ if __name__ == "__main__":
     host = os.getenv("HOST", "0.0.0.0")
     port = config.PORT
 
-    logger.info(
-        {"host": host, "port": port},
-        "🚀 Python Manager starting",
-    )
+    logger.info(f"🚀 Python Manager starting | host={host} | port={port}")
 
     uvicorn.run(app, host=host, port=port)

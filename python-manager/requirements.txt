@@ -1,3 +1,7 @@
+# Required for spell_grammar_checker
+language_tool_python
+# Required for spell_grammar_checker
+pyspellchecker
 pdf2docx
 PyMuPDF
 minio
@@ -8,4 +12,6 @@ requests==2.31.0
 pydantic==2.5.0
 python-docx==0.8.11
 nltk==3.9.2
+# Required for identity_detector (reductor)
+presidio-analyzer
 

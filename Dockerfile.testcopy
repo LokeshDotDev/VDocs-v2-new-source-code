@@ -1,0 +1,5 @@
+# Minimal Dockerfile to test copying reductor-module
+FROM python:3.11-slim
+WORKDIR /app
+COPY reductor-module /app/reductor-module
+CMD ["ls", "-l", "/app/reductor-module/reductor-service-v2/utils/"]

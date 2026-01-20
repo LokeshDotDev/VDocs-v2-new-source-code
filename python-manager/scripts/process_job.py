@@ -54,21 +54,39 @@ try:
     
     # === REDUCTOR MODULE ===
     sys.path.insert(0, REDUCTOR_MODULE)
-    
+
     # Import logger module
     import logger as reductor_logger_module
-    
-    # Now import reductor utils
-    import utils.docx_anonymizer as docx_anon_module
-    import utils.identity_detector as identity_det_module
-    
+
+    # Add utils path for reductor utils
+    UTILS_MODULE = os.path.join(REDUCTOR_MODULE, "utils")
+    import importlib.util
+
+    def import_module_from_path(module_name, module_path):
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    docx_anonymizer_path = os.path.join(UTILS_MODULE, "docx_anonymizer.py")
+    identity_detector_path = os.path.join(UTILS_MODULE, "identity_detector.py")
+    docx_anon_module = import_module_from_path("docx_anonymizer", docx_anonymizer_path)
+    identity_det_module = import_module_from_path("identity_detector", identity_detector_path)
+
     # Extract functions
     anonymize_docx = docx_anon_module.anonymize_docx
     unzip_docx = docx_anon_module.unzip_docx
     load_xml = docx_anon_module.load_xml
     detect_identity = identity_det_module.detect_identity
-    
-    sys.path.pop(0)
+
+    # Extract functions
+    anonymize_docx = docx_anon_module.anonymize_docx
+    unzip_docx = docx_anon_module.unzip_docx
+    load_xml = docx_anon_module.load_xml
+    detect_identity = identity_det_module.detect_identity
+
+    sys.path.pop(0)  # Remove utils path
+    sys.path.pop(0)  # Remove reductor module path
     
 except Exception as e:
     print(f"Error importing modules: {e}")

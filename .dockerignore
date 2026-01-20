@@ -1,0 +1,13 @@
+# Exclude large and unnecessary files from Docker build context
+**/tmp/
+**/__pycache__/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.venv/
+**/.env
+**/.DS_Store
+**/*.log
+**/*.sqlite3
+**/*.db
+**/.git/
+**/.gitignore
