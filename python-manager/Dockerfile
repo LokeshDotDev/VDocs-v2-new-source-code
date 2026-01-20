@@ -15,10 +15,10 @@ RUN apt-get update && apt-get install -y \
 COPY python-manager/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY python-manager/ .
 COPY reductor-module /app/reductor-module
 
 ENV PORT=5000
 EXPOSE 5000
 
-CMD ["python", "main.py"]
+CMD ["python", "python-manager/main.py"]
