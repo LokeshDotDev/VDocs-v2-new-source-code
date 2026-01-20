@@ -16,9 +16,10 @@ COPY python-manager/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY python-manager/ .
+COPY python-manager/main.py ./main.py
 COPY reductor-module /app/reductor-module
 
 ENV PORT=5000
 EXPOSE 5000
 
-CMD ["python", "python-manager/main.py"]
+CMD ["python", "main.py"]
